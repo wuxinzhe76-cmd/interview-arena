@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import type { BaseResponse } from '@/types';
 
 const request = axios.create({
@@ -19,7 +19,7 @@ request.interceptors.request.use((config) => {
 
 // 响应拦截:统一处理 code + 401 跳登录
 request.interceptors.response.use(
-  (response) => {
+  ((response: AxiosResponse) => {
     const data = response.data as BaseResponse<unknown>;
     if (data.code === 0) {
       return data;
@@ -34,7 +34,7 @@ request.interceptors.response.use(
       }
     }
     return Promise.reject(new Error(data.message || '请求失败'));
-  },
+  }) as unknown as Parameters<typeof request.interceptors.response.use>[0],
   (error) => Promise.reject(error)
 );
 
