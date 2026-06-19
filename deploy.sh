@@ -17,14 +17,14 @@ else
 fi
 
 echo "===== 2. 构建并启动容器 ====="
-docker-compose down
-docker-compose up -d --build
+docker compose down
+docker compose up -d --build
 
 echo "===== 3. 等待启动 ====="
 sleep 10
 
 echo "===== 4. 检查状态 ====="
-docker-compose ps
+docker compose ps
 
 echo "===== 5. 健康检查 ====="
 for i in 1 2 3 4 5; do
