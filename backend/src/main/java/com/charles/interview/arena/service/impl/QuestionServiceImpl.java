@@ -1,0 +1,111 @@
+package com.charles.interview.arena.service.impl;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.charles.interview.arena.common.ErrorCode;
+import com.charles.interview.arena.exception.ThrowUtils;
+import com.charles.interview.arena.mapper.QuestionMapper;
+import com.charles.interview.arena.model.dto.QuestionAddDTO;
+import com.charles.interview.arena.model.dto.QuestionQueryDTO;
+import com.charles.interview.arena.model.entity.Question;
+import com.charles.interview.arena.model.vo.QuestionVO;
+import com.charles.interview.arena.service.QuestionService;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> implements QuestionService {
+
+    @Override
+    public Long addQuestion(QuestionAddDTO dto, Long userId) {
+        Question question = new Question();
+        BeanUtils.copyProperties(dto, question);
+        question.setUserId(userId);
+        // 设置默认值(DTO 未传时)
+        if (question.getType() == null) {
+            question.setType("PROGRAMMING");
+        }
+        if (question.getDifficulty() == null) {
+            question.setDifficulty("MEDIUM");
+        }
+        if (question.getTimeLimit() == null) {
+            question.setTimeLimit(1000);
+        }
+        if (question.getMemoryLimit() == null) {
+            question.setMemoryLimit(256);
+        }
+        boolean saved = this.save(question);
+        ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "题目创建失败");
+        return question.getId();
+    }
+
+    @Override
+    public Boolean updateQuestion(QuestionAddDTO dto) {
+        Question question = new Question();
+        BeanUtils.copyProperties(dto, question);
+        boolean updated = this.updateById(question);
+        ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "题目更新失败");
+        return true;
+    }
+
+    @Override
+    public Boolean deleteQuestion(Long id) {
+        boolean removed = this.removeById(id);
+        ThrowUtils.throwIf(!removed, ErrorCode.OPERATION_ERROR, "题目删除失败");
+        return true;
+    }
+
+    @Override
+    public QuestionVO getQuestionVO(Long id) {
+        Question question = this.getById(id);
+        ThrowUtils.throwIf(question == null, ErrorCode.NOT_FOUND_ERROR, "题目不存在");
+        QuestionVO vo = new QuestionVO();
+        BeanUtils.copyProperties(question, vo);
+        return vo;
+    }
+
+    @Override
+    public Page<QuestionVO> listQuestionVOByPage(QuestionQueryDTO dto) {
+        // TODO: 你来写 —— 练习 MyBatis-Plus 分页 + 标签筛选
+        // 提示:
+        // 1. QueryWrapper 构建条件:
+        //    - title: wrapper.like("title", title)  (注意判空)
+        //    - type:  wrapper.eq("type", type)
+        //    - difficulty: wrapper.eq("difficulty", difficulty)
+        QueryWrapper<Question> queryWrapper = new QueryWrapper<>();
+        queryWrapper.like(StringUtils.isNotBlank(dto.getTitle()),"title", dto.getTitle())
+                    .eq(StringUtils.isNotBlank(dto.getType()), "type", dto.getType())
+                    .eq(StringUtils.isNotBlank(dto.getDifficulty()), "difficulty", dto.getDifficulty());
+        // 2. tags 标签筛选(关键!用 apply 拼原生 SQL):
+        //    for (String tag : dto.getTags()) {
+        //        wrapper.apply("JSON_CONTAINS(tags, {0})", "\"" + tag + "\"");
+        //    }
+        if (dto.getTags() != null && !dto.getTags().isEmpty()) {
+            for (String tag : dto.getTags()) {
+            queryWrapper.apply("JSON_CONTAINS(tags, {0})", "\"" + tag + "\"");
+        }
+    }
+        //    注意: JSON_CONTAINS 第二个参数要是 JSON 字符串(带双引号),如 "HashMap"
+        // 3. 分页: this.page(new Page<>(current, pageSize), wrapper)
+        Page<Question> page = this.page(new Page<>(dto.getCurrent(), dto.getPageSize()),queryWrapper);
+
+        // 4. 转 VO: page.convert(q -> { QuestionVO vo = new QuestionVO(); BeanUtils.copyProperties(q, vo); return vo; })
+        Page<QuestionVO> voPage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        List<QuestionVO> voList = page.getRecords().stream().map(q -> {
+            QuestionVO vo = new QuestionVO();
+            BeanUtils.copyProperties(q, vo);
+            return vo;
+        }).collect(Collectors.toList());
+        voPage.setRecords(voList);
+        return voPage;
+    }
+}

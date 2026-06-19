@@ -1,0 +1,64 @@
+# 生产环境配置(Docker 部署用)
+# 通过环境变量注入连接地址,默认用 host.docker.internal(宿主机)
+
+spring:
+  application:
+    name: interview-arena-backend
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:host.docker.internal}:3306/interview_arena?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: ${REDIS_HOST:host.docker.internal}
+      port: 6379
+      database: 0
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:host.docker.internal}
+    port: 5672
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:admin}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+
+  devtools:
+    restart:
+      enabled: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: default
+      paths-to-match: /**
+      display-name: interview-arena API
+
+management:
+  endpoint:
+    health:
+      show-details: always

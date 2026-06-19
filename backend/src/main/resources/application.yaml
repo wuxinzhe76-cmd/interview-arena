@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: interview-arena-backend
+
+  datasource:
+    url: jdbc:mysql://117.72.62.12:3306/interview_arena?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: 117.72.62.12
+      port: 6379
+      database: 0
+
+  rabbitmq:
+    host: 117.72.62.12
+    port: 5672
+    username: admin
+    password: admin
+    # 消息确认机制
+    publisher-confirm-type: correlated   # 生产者确认(消息到达交换机)
+    publisher-returns: true               # 消息路由失败退回
+    listener:
+      simple:
+        acknowledge-mode: manual          # 手动 ACK(消费者处理完才确认)
+        prefetch: 1                        # 一次只取 1 条(公平分发,不堆积)
+
+  devtools:
+    restart:
+      enabled: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+# MyBatis-Plus 配置（顶级,不在 spring 下）
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# Knife4j（顶级,不在 spring 下）
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: default
+      paths-to-match: /**
+      display-name: interview-arena API
+
+# Actuator
+management:
+  endpoint:
+    health:
+      show-details: always
