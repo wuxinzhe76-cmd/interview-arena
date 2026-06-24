@@ -6,13 +6,16 @@ services:
     build: ./backend
     container_name: interview-backend
     restart: always
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - MYSQL_HOST=host.docker.internal
       - REDIS_HOST=host.docker.internal
       - RABBITMQ_HOST=host.docker.internal
+      - MYSQL_PASSWORD=Arena@2026SecurePwd
+      - REDIS_PASSWORD=Redis@2026Secure
+      - RABBITMQ_PASSWORD=Mq@2026Secure
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

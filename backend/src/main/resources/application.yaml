@@ -1,11 +1,12 @@
 spring:
   application:
     name: interview-arena-backend
-
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: jdbc:mysql://117.72.62.12:3306/interview_arena?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: ${MYSQL_PASSWORD:Arena@2026SecurePwd}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   data:
@@ -13,12 +14,13 @@ spring:
       host: 117.72.62.12
       port: 6379
       database: 0
+      password: ${REDIS_PASSWORD:Redis@2026Secure}
 
   rabbitmq:
     host: 117.72.62.12
     port: 5672
     username: admin
-    password: admin
+    password: ${RABBITMQ_PASSWORD:Mq@2026Secure}
     # 消息确认机制
     publisher-confirm-type: correlated   # 生产者确认(消息到达交换机)
     publisher-returns: true               # 消息路由失败退回
@@ -36,6 +38,34 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
+
+  # ==================== Spring AI 配置（RAG 模块 Step 11） ====================
+  ai:
+    # DashScope（通义千问 + Embedding）
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY}  # 从环境变量读取，不硬编码
+      chat:
+        options:
+          model: qwen-plus        # 通义千问对话模型
+          temperature: 0.7
+      embedding:
+        options:
+          model: text-embedding-v3  # DashScope Embedding 模型，输出 1024 维
+
+    # Milvus 向量数据库
+    vectorstore:
+      milvus:
+        client:
+          host: 117.72.62.12
+          port: 19530
+          username: root
+          password: milvus
+        database-name: default
+        collection-name: interview_arena_qa    # 面试题知识库 collection
+        embedding-dimension: 1024              # 对齐 text-embedding-v3 输出维度
+        index-type: HNSW                       # 企业级索引：HNSW（图索引，精度+速度兼顾）
+        metric-type: COSINE                    # 余弦相似度
+        initialize-schema: true                # 自动创建 collection
 
 # MyBatis-Plus 配置（顶级,不在 spring 下）
 mybatis-plus:

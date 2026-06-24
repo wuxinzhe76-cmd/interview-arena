@@ -39,3 +39,9 @@ logs/
 
 # ===== Docker =====
 # 不忽略 Dockerfile 和 docker-compose.yml
+
+# ===== 个人学习资料（不提交到 GitHub）=====
+docs/qa/
+docs/八股映射表.md
+docs/面试亮点.md
+tasks/
