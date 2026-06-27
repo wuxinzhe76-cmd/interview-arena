@@ -18,6 +18,7 @@ services:
       - MYSQL_PASSWORD=Arena@2026SecurePwd
       - REDIS_PASSWORD=Redis@2026Secure
       - RABBITMQ_PASSWORD=Mq@2026Secure
+      - AI_DASHSCOPE_API_KEY=${AI_DASHSCOPE_API_KEY}
     networks:
       - interview-net
       - infra-net
