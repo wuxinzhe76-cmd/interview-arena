@@ -13,6 +13,8 @@ services:
       - MYSQL_HOST=mysql
       - REDIS_HOST=redis
       - RABBITMQ_HOST=rabbitmq
+      - ES_HOST=elasticsearch
+      - MILVUS_HOST=milvus-standalone
       - MYSQL_PASSWORD=Arena@2026SecurePwd
       - REDIS_PASSWORD=Redis@2026Secure
       - RABBITMQ_PASSWORD=Mq@2026Secure
