@@ -202,3 +202,19 @@ url: jdbc:mysql://117.72.62.12:3306/interview_arena?useUnicode=true&characterEnc
 
 7. **分布式 ID 方案有哪些？什么时候用？**
    → 自增 id（单机）、雪花算法（分布式）、UUID（不推荐）。单表 > 1000 万或分库分表时用雪花算法。
+
+---
+
+## 📚 八股复习清单（Step 6 · Flyway 数据库迁移）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | MySQL | DDL 与 DML 的区别（CREATE/ALTER vs INSERT/UPDATE） | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 2 | MySQL | 字符集与排序规则（utf8mb4_unicode_ci 的 _ci 含义） | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 3 | Spring | Spring Boot 自动配置（Flyway AutoConfiguration 如何触发） | `2-Java相关内容/spring框架/SpringBoot面试题.md` |
+| 4 | 后端场景 | **数据库不停服迁移（Flyway 的版本化迁移策略）** | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+| 5 | MySQL | 主键自增 vs 雪花算法 ID 的选择 | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+
+⏰ 复习顺序：读 `V1__create_user_table.sql` → 背 DDL/DML → 背字符集 → **重点背不停服迁移** → 合上文档自述

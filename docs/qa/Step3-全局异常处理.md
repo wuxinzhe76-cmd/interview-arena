@@ -274,3 +274,20 @@ List<String> result = users.stream()
    → `findFirst()` 串行流返回第一个，并行流也返回第一个（有顺序约束，较慢）；`findAny()` 并行流返回任意一个（更快）。
 8. **方法引用 `FieldError::getDefaultMessage` 是什么？**
    → Lambda `fe -> fe.getDefaultMessage()` 的简写，`类名::方法名` 表示调用实例方法。
+
+---
+
+## 📚 八股复习清单（Step 3 · 全局异常处理）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | Java基础 | 异常体系（Throwable/Exception/Error 的层级关系） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 2 | Java基础 | 受检异常 vs 非受检异常（编译器强制处理 vs 运行时暴露） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 3 | Spring | @ControllerAdvice 的原理（全局异常捕获） | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 4 | Spring | @ExceptionHandler 的执行流程 | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 5 | Spring | **@Transactional 回滚规则（默认只回滚 RuntimeException！）** | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 6 | Java基础 | throw vs throws 的区别 | `2-Java相关内容/Java基础/Java基础面试题.md` |
+
+⏰ 复习顺序：读 `BusinessException.java` → 读 `GlobalExceptionHandler.java` → 背异常体系 → **重点背 @Transactional 回滚规则** → 合上文档自述

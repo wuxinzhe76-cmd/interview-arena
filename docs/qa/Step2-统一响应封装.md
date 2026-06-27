@@ -270,3 +270,19 @@ BaseResponse<User> resp = objectMapper.readValue(json,
    → 类型安全、省强转、Swagger/OpenAPI 自动识别 data 结构。
 5. **Spring MVC 怎么把 Java 对象转成 JSON 返回的？**
    → HandlerAdapter 调用 HttpMessageConverter，默认是 MappingJackson2HttpMessageConverter，内部用 ObjectMapper.writeValue。
+
+---
+
+## 📚 八股复习清单（Step 2 · 统一响应封装）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | Java基础 | 泛型与类型擦除（T 在运行时会被擦除） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 2 | Java基础 | Object 类的常用方法（toString/equals） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 3 | Spring | @RestController vs @Controller 的区别 | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 4 | Spring | @RestControllerAdvice 的原理 | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 5 | 设计模式 | 工厂模式（ResultUtils.success/error 静态工厂） | `4-后端设计相关内容/设计模式/设计模式面试题.md` |
+
+⏰ 复习顺序：读 `BaseResponse.java` → 读 `ResultUtils.java` → 背泛型擦除 → 背工厂模式 → 合上文档自述

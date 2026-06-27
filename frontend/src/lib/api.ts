@@ -8,6 +8,7 @@ import type {
   QuestionQueryDTO,
   SubmissionVO,
   QuestionSubmitDTO,
+  RagChatResponse,
 } from '@/types';
 
 // ========== 用户 ==========
@@ -39,4 +40,14 @@ export const judgeApi = {
   // 本地测试用:同步判题
   testSync: (submissionId: number) =>
     request.post<any, BaseResponse<string>>(`/api/judge/test-sync/${submissionId}`),
+};
+
+// ========== RAG ==========
+export const ragApi = {
+  chat: (message: string) =>
+    request.post<any, BaseResponse<RagChatResponse>>('/api/rag/chat', { message }),
+  suggest: (prefix: string, limit = 10) =>
+    request.get<any, BaseResponse<string[]>>('/api/rag/suggest', { params: { prefix, limit } }),
+  importQuestions: () =>
+    request.post<any, BaseResponse<number>>('/api/rag/import'),
 };

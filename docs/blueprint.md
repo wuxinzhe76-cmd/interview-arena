@@ -323,6 +323,8 @@ create table if not exists interview_record (
 | learning_path | 学习路径 | ⬜ 未实现 |
 | user_answer | 用户答题统计 | ⬜ 未实现 |
 | user_favorite_question | 收藏/错题本 | ⬜ 未实现 |
+| user_knowledge_profile | 用户知识画像（语义记忆：知识点掌握度+薄弱点） | ⬜ 未实现 |
+| user_memory_summary | 用户记忆摘要（跨会话画像：总面试次数+Top薄弱点+推荐复习） | ⬜ 未实现 |
 
 ---
 
@@ -403,25 +405,43 @@ public interface CodeSandbox {
 | 指定题库(mode=1) | 从指定题库抽题,定向突击 | 上下文注入: 题目信息作为 System Prompt |
 | 大厂随机(mode=2) | 全局随机抽题,全真模拟 | 动态追问: AI 自主深度挖掘 |
 
-#### 核心流程
+#### 核心流程（★ 2026-06-25 讨论修订：每轮即时落库 + Redis 滑动窗口）
+
+> **修订点**（vs 原始设计）：
+> 1. 每轮回答后**即时 INSERT interview_record**（不等面试结束批量刷入），防止异常中断丢数据
+> 2. Redis 对话历史改**滑动窗口**（最近 10 条），超限 LTRIM 砍最早——砍的消息已落库，安心丢
+> 3. action_directive **三层控制**：AI 主导 + 代码兜底（单题 >3 轮强制换题 / 总轮 >=10 强制结束）+ 用户主动结束
+> 4. 面试结束后**立即删 Redis 4 个 key**（不等 TTL 2h 超时），释放空间
+> 5. 面试主流程**不走 RAG**（题目已选定，直接 MySQL 查注入 Prompt）；RAG 用于"快速询问"场景（§5.5.6）
 
 ```
-开始面试
-  → 创建 interview_session(status=0)
-  → 按模式抽第一道题
-  → Redis 缓存: 当前题目/轮次/对话历史/已用题目集
-  → AI 生成开场提问(generateOpeningQuestion)
+开始面试 POST /api/interview/start
+  → 创建 interview_session(status=0 进行中)
+  → 按模式抽第一道题:
+      mode=1 指定题库 → question_bank_question 关联表查
+      mode=2 大厂随机 → question 表随机查
+  → Redis 缓存 4 个 key: 对话历史/当前题目/轮次/已用题目集（TTL 2h）
+  → AI 生成开场提问 → 即时 INSERT interview_record(role=assistant)
+  → push AI 开场提问到 Redis 对话历史
   → 返回 sessionId + openingQuestion
 
-提交回答
-  → Redis 推进轮次
-  → Redis 保存用户回答到对话历史
-  → 从 Redis 取当前题目 + 对话历史
-  → 调用 AI 评估(evaluateAnswer) → 结构化 JSON 输出
-  → 按 actionDirective 路由分发:
-      DEEP_DIVE → 继续追问,AI 回复已存 Redis
-      NEXT_QUESTION → 抽下一题 → AI 生成过渡提问 → 存 Redis
-      END_INTERVIEW → 结束 → 异步刷入 DB → RabbitMQ 生成报告
+提交回答 POST /api/interview/answer（循环调用）
+  → 即时 INSERT interview_record(role=user, content=用户回答)  ← 先落库
+  → Redis 推进轮次 + push 用户回答到对话历史
+  → 从 Redis 取当前题目 + 对话历史（最近 10 条滑动窗口）
+  → 调通义千问(结构化输出 → JSON: reply_to_user + action_directive + current_topic_mastery)
+  → 即时 INSERT interview_record(role=assistant, content=AI 回复)  ← AI 回复也落库
+  → push AI 回复到 Redis 对话历史
+  → Redis List > 10 条 → LTRIM 砍最早（已落库，安心丢）
+  → 按 action_directive 路由（三层控制见下方）
+      DEEP_DIVE → 继续追问当前知识点（AI 回复已在上面存 Redis + DB）
+      NEXT_QUESTION → 抽下一题（排除已用题目集）→ AI 生成过渡提问 → 存 Redis + DB
+      END_INTERVIEW → 结束面试（见下方）
+
+结束面试 POST /api/interview/end/{sessionId}（用户主动 / 自动触发）
+  → interview_session.status → 1（已结束）
+  → 立即删除 Redis 4 个 key（不等 TTL 2h 超时，释放空间）
+  → 发 MQ 消息 → 异步生成面试报告
 ```
 
 #### 结构化输出 (Structured Output)
@@ -439,6 +459,29 @@ AI 返回 JSON:
 - `DEEP_DIVE`: 继续追问当前知识点
 - `NEXT_QUESTION`: 切换下一道题
 - `END_INTERVIEW`: 结束面试
+
+**三层控制机制**（AI 主导 + 代码兜底 + 用户主动）：
+
+| 控制方 | 职责 | 触发条件 |
+|--------|------|---------|
+| AI 主导 | 看用户回答质量返回 action_directive | 每轮 AI 调用都返回 |
+| 代码兜底 1 | 单题追问 > 3 轮 → 强制 `NEXT_QUESTION` | 防止 AI 在一道题上无限追问 |
+| 代码兜底 2 | 总轮次 >= 10 → 强制 `END_INTERVIEW` | 防止 AI 永远不结束 |
+| 用户主动 | `POST /api/interview/end/{sessionId}` | 用户中途退出 |
+
+```java
+String directive = aiResponse.getActionDirective();
+// 代码兜底 1：单题超过 3 轮，强制换题
+if (currentQuestionRoundCount >= 3 && "DEEP_DIVE".equals(directive)) {
+    directive = "NEXT_QUESTION";
+}
+// 代码兜底 2：总轮次达到上限（10 轮，可配），强制结束
+if (totalRound >= maxRounds) {
+    directive = "END_INTERVIEW";
+}
+```
+
+> 总轮数上限 10 轮的依据：大厂技术面试 45-60 分钟，每轮问答约 4-5 分钟，10 轮刚好覆盖。值放 `application.yaml` 可配。
 
 #### Spring AI 调用方式
 
@@ -472,18 +515,275 @@ AiInterviewResponseDTO response = chatClient.prompt()
 参考答案: {{questionAnswer}}
 ```
 
-#### Redis 数据结构
+#### Redis 数据结构（StringRedisTemplate，非 Redisson）
 
-| Key | 类型 | 说明 | TTL |
-|-----|------|------|-----|
-| `interview:history:{sessionId}` | RList<String> | 对话历史(role: content) | 2h |
-| `interview:question:{sessionId}` | RBucket<Long> | 当前题目 ID | 2h |
-| `interview:round:{sessionId}` | RAtomicLong | 当前轮次 | 2h |
-| `interview:used:{sessionId}` | RSet<Long> | 已使用题目集 | 2h |
+| Key | 类型 | Spring API | 说明 | TTL |
+|-----|------|-----------|------|-----|
+| `interview:history:{sessionId}` | List | `opsForList()` | 对话历史（role:content），**滑动窗口最近 10 条**，超限 LTRIM 砍最早（已落库） | 2h |
+| `interview:question:{sessionId}` | String | `opsForValue()` | 当前题目 ID | 2h |
+| `interview:round:{sessionId}` | String | `opsForValue()` | 当前总轮次 | 2h |
+| `interview:questionRound:{sessionId}` | String | `opsForValue()` | 当前题目已追问轮次（兜底 1 用） | 2h |
+| `interview:used:{sessionId}` | Set | `opsForSet()` | 已使用题目集（防重复抽题） | 2h |
+
+**滑动窗口机制**：
+- Redis List 只保留最近 10 条消息（5 轮 user+assistant），给 AI 看上下文
+- 超过 10 条 → `LTRIM` 砍最早的，**砍的消息已经在 MySQL interview_record 里了**（每轮即时落库）
+- Redis 是 AI 的工作记忆（热数据），MySQL 是持久化记录（冷数据），分层不冲突
+
+**面试结束清理**：
+```java
+// 面试结束时立即删 4 个 key（不等 TTL 2h 超时，释放空间）
+redisTemplate.delete("interview:history:" + sessionId);
+redisTemplate.delete("interview:question:" + sessionId);
+redisTemplate.delete("interview:round:" + sessionId);
+redisTemplate.delete("interview:questionRound:" + sessionId);
+redisTemplate.delete("interview:used:" + sessionId);
+```
 
 #### 消息队列
 
 `InterviewReportProducer` 在面试结束时发送 RabbitMQ 消息,异步生成面试报告。
+
+#### 记忆分层架构（★ 借鉴 Hello-Agents 第八章 + Spring AI 落地）
+
+> 设计灵感：Hello-Agents 第八章将 Agent 记忆分为工作记忆 / 情景记忆 / 语义记忆 / 感知记忆四层，
+> 配套记忆整合（consolidation）与遗忘（forgetting）机制。
+> 本项目是 Java Spring AI 项目，不照搬 Python 四层架构，而是取其**分层思想 + 整合 + 遗忘**，
+> 用 Redis + MySQL + Milvus 三级存储落地，贴合面试场景。
+
+##### 为什么需要记忆分层
+
+当前 Agent 模块用 Redis 存对话历史（TTL 2h），面试结束即丢失。问题：
+1. **跨会话遗忘**：用户上次面试在 volatile 可见性上卡住，下次面试不会自动回避或重点考察
+2. **无用户画像**：不知道用户擅长 Java 基础但弱在并发，每次都从零开始
+3. **无法个性化出题**：没有历史表现数据驱动抽题策略
+4. **对话上下文割裂**：长面试中早期信息可能因 Redis 容量被挤出
+
+##### 三层记忆模型
+
+借鉴 Hello-Agents 的工作记忆 / 情景记忆 / 语义记忆（感知记忆暂不需要，无多模态场景）：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MemoryManager（统一调度）                  │
+│           负责 add / retrieve / consolidate / forget          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  工作记忆     │  │  情景记忆     │  │  语义记忆     │       │
+│  │ WorkingMemory│  │EpisodicMemory│  │SemanticMemory│       │
+│  │              │  │              │  │              │       │
+│  │ Redis        │  │ MySQL        │  │ MySQL+Milvus │       │
+│  │ 会话级       │  │ 跨会话       │  │ 跨会话       │       │
+│  │ TTL 2h       │  │ 永久         │  │ 永久         │       │
+│  │              │  │              │  │              │       │
+│  │ 当前对话上下文│  │ 历次面试记录 │  │ 用户知识画像 │       │
+│  │ 当前题目     │  │ 具体问答明细 │  │ 薄弱点 + 画像│       │
+│  │ 当前轮次     │  │ 时间序列     │  │ 向量检索     │       │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘       │
+│         │                 │                  │               │
+│         └──────consolidate┘──────────────────┘               │
+│           （面试结束触发：工作→情景→语义 自动升级）            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 记忆层 | 存储介质 | 生命周期 | 存什么 | 对应 Hello-Agents |
+|--------|---------|---------|--------|------------------|
+| **工作记忆** | Redis（已有） | TTL 2h，会话级 | 当前对话历史、当前题目、轮次、已用题目集 | WorkingMemory（纯内存 + TTL） |
+| **情景记忆** | MySQL（已有 interview_session + interview_record） | 永久 | 每次面试的完整问答明细、评分、时间序列 | EpisodicMemory（SQLite + Qdrant） |
+| **语义记忆** | MySQL + Milvus（新增） | 永久 | 用户知识画像（薄弱点、掌握度、偏好标签） | SemanticMemory（Qdrant + Neo4j） |
+
+##### 记忆整合机制（Consolidation）
+
+借鉴 Hello-Agents 的"工作记忆→情景记忆→语义记忆"自动升级，在面试结束时触发：
+
+```
+面试结束（END_INTERVIEW）
+  │
+  ├── Step 1: 工作记忆 → 情景记忆
+  │   Redis 对话历史 → 异步刷入 interview_record 表（已有逻辑）
+  │   interview_session status → 1（已结束）
+  │
+  ├── Step 2: 情景记忆 → 语义记忆（★ 新增核心）
+  │   AI 分析本次面试所有问答 → 提取知识图谱：
+  │   - 哪些知识点被考察了
+  │   - 每个知识点的掌握度（current_topic_mastery 均值）
+  │   - 标记薄弱点（mastery < 60）
+  │   → 写入 user_knowledge_profile 表
+  │   → 薄弱点描述向量化后写入 Milvus（支持语义检索"用户在哪方面弱"）
+  │
+  └── Step 3: 更新用户画像
+      user_memory_summary 表更新：
+      - 总面试次数、平均分
+      - Top-3 薄弱知识点
+      - 推荐复习方向
+```
+
+**触发条件**（借鉴 Hello-Agents 整合触发设计）：
+- 面试结束（END_INTERVIEW）→ 全量整合
+- 单题 mastery < 40 → 即时标记薄弱点（不等面试结束）
+- 同一知识点连续 2 次面试 mastery < 60 → 升级为"顽固薄弱点"，下次面试优先考察
+
+##### 遗忘策略（Forgetting）
+
+借鉴 Hello-Agents 的三种遗忘策略，适配面试场景：
+
+| 策略 | 实现 | 场景 |
+|------|------|------|
+| **TTL 过期** | Redis 工作记忆 TTL 2h，面试结束 30 分钟后自动清理 | 会话结束即遗忘短期上下文 |
+| **容量限制** | 工作记忆对话历史超过 50 条时，FIFO 淘汰最早消息 | 防止长面试上下文爆炸 |
+| **时间衰减** | 情景记忆 30 天前的记录不参与检索（但仍保留在 DB 可查） | 近期面试表现权重更高 |
+| **重要性保留** | mastery < 40 的问答记录永久保留且权重 ×2（不衰减） | 薄弱点不能忘 |
+
+**评分公式**（借鉴 Hello-Agents EpisodicMemory 评分）：
+```
+retrieval_score = relevance × time_decay × importance_weight
+
+relevance:         与当前面试主题的语义相似度（Milvus 向量检索）
+time_decay:        max(0.3, 1 - days_elapsed / 30)  // 30天衰减到0.3底线
+importance_weight: mastery < 40 ? 2.0 : (mastery < 60 ? 1.5 : 1.0)
+```
+
+##### 记忆驱动的智能出题（★ 核心差异化）
+
+面试开始时，从语义记忆加载用户画像，驱动出题策略：
+
+```java
+// 开始面试时加载用户记忆
+UserKnowledgeProfile profile = semanticMemoryService.loadProfile(userId);
+
+if (profile == null || profile.getTotalInterviews() == 0) {
+    // 新用户：随机抽题
+    return questionService.randomSelect(bankId, excludeSet);
+}
+
+// 老用户：记忆驱动出题
+List<KnowledgeWeakness> weakPoints = profile.getWeakPoints(); // mastery < 60
+
+if (!weakPoints.isEmpty()) {
+    // 优先考顽固薄弱点（连续2次低分）
+    KnowledgeWeakness worst = weakPoints.stream()
+        .filter(KnowledgeWeakness::isPersistent)
+        .max(Comparator.comparingInt(w -> -w.getAvgMastery()))
+        .orElse(weakPoints.get(0));
+
+    // 从题库中找与薄弱点语义相似的题目
+    List<Long> candidates = vectorStore.similarSearch(
+        worst.getDescription(), topK = 10, excludeUsed = true
+    );
+    return questionService.getById(candidates.get(random));
+}
+
+// 无薄弱点：按用户偏好标签抽题
+return questionService.selectByTags(profile.getPreferredTags(), excludeSet);
+```
+
+##### RAG + Memory 智能路由
+
+借鉴 Hello-Agents 第八章 8.4 的"RAG 检索 + Memory 检索"双路设计：
+
+```
+用户在面试中提问
+  │
+  ├── 是知识题？ → 走 RAG（Hybrid Search + Rerank → 注入 Prompt）
+  │   "HashMap 的扩容机制是什么？"
+  │
+  ├── 是追问历史？ → 走 Memory（情景记忆检索历次面试记录）
+  │   "我上次这道题答得怎么样？"
+  │
+  └── 混合场景？ → 两路并行，合并上下文
+      "我上次在这里卡住了，再给我讲讲"
+      → Memory: 上次该知识点的问答记录
+      → RAG: 该知识点的标准答案
+      → 合并注入 Prompt
+```
+
+**路由判断**（轻量 LLM 分类或关键词规则）：
+```java
+public enum RetrievalRoute {
+    RAG_ONLY,       // 知识题
+    MEMORY_ONLY,    // 历史追问
+    RAG_AND_MEMORY  // 混合
+}
+
+// 规则兜底（不每次调 LLM）
+if (containsKeyword(query, "上次", "之前", "上次面试")) return MEMORY_ONLY;
+if (containsKeyword(query, "什么是", "原理", "区别")) return RAG_ONLY;
+return RAG_AND_MEMORY; // 默认混合
+```
+
+##### 新增数据库表
+
+###### user_knowledge_profile（用户知识画像表 ★ 新增）
+
+```sql
+create table if not exists user_knowledge_profile (
+    id              bigint auto_increment primary key,
+    user_id         bigint not null comment '用户 ID',
+    topic           varchar(256) not null comment '知识点名称（如 Java volatile）',
+    topic_vector    json null comment '知识点向量（Milvus 同步用）',
+    avg_mastery     int default 0 comment '该知识点历史平均掌握度 0-100',
+    exam_count      int default 0 comment '被考察次数',
+    weak_count      int default 0 comment '掌握度 < 60 的次数',
+    is_persistent   tinyint default 0 comment '是否顽固薄弱点（连续2次<60）',
+    last_exam_time  datetime null comment '最近一次考察时间',
+    create_time     datetime default CURRENT_TIMESTAMP not null,
+    update_time     datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    unique key uk_user_topic (user_id, topic),
+    index idx_user_weak (user_id, avg_mastery)
+) comment '用户知识画像（语义记忆持久化）';
+```
+
+###### user_memory_summary（用户记忆摘要表 ★ 新增）
+
+```sql
+create table if not exists user_memory_summary (
+    id                  bigint auto_increment primary key,
+    user_id             bigint not null comment '用户 ID',
+    total_interviews    int default 0 comment '总面试次数',
+    avg_score           decimal(5,2) default 0 comment '历史平均分',
+    weak_topics         varchar(1024) null comment 'Top-3 薄弱知识点（JSON 数组）',
+    preferred_tags      varchar(512) null comment '偏好标签（JSON 数组）',
+    recommended_review  text null comment 'AI 生成的推荐复习方向',
+    last_interview_time datetime null comment '最近面试时间',
+    create_time         datetime default CURRENT_TIMESTAMP not null,
+    update_time         datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    unique key uk_user (user_id)
+) comment '用户记忆摘要（跨会话画像）';
+```
+
+##### 新增包结构
+
+```
+com.charles.interview.arena.ai.memory/
+├── MemoryManager.java                 # ★ 记忆统一调度器（add/retrieve/consolidate/forget）
+├── working/
+│   └── WorkingMemoryService.java      # 工作记忆（Redis，封装现有 Redis 操作 + 容量管理）
+├── episodic/
+│   └── EpisodicMemoryService.java     # 情景记忆（MySQL，封装 interview_session/record 检索 + 时间衰减评分）
+├── semantic/
+│   ├── SemanticMemoryService.java     # 语义记忆（MySQL + Milvus，用户画像 CRUD + 向量检索）
+│   └── KnowledgeProfileAnalyzer.java  # AI 分析面试记录 → 提取知识点/薄弱点 → 写入画像
+├── consolidation/
+│   └── MemoryConsolidationService.java # 记忆整合（面试结束触发：工作→情景→语义）
+├── routing/
+│   └── RetrievalRouter.java           # RAG + Memory 智能路由
+└── model/
+    ├── KnowledgeWeakness.java         # 薄弱点 DTO
+    ├── UserKnowledgeProfile.java      # 用户知识画像 Entity
+    └── RetrievalRoute.java            # 路由枚举
+```
+
+##### 面试讲点
+
+| 面试问题 | 怎么讲 |
+|---------|--------|
+| "你的 Agent 怎么记住用户的？" | "借鉴 Hello-Agents 的记忆分层思想，设计了工作记忆（Redis 会话级）、情景记忆（MySQL 面试记录）、语义记忆（MySQL+Milvus 用户画像）三层架构，面试结束时自动触发记忆整合，从对话中提取知识薄弱点写入用户画像" |
+| "用户下次面试怎么用上历史数据？" | "语义记忆驱动智能出题：加载用户画像，优先考察顽固薄弱点（连续 2 次低分的知识点），通过 Milvus 向量检索找语义相似的题目" |
+| "记忆会无限膨胀吗？" | "三种遗忘策略：Redis TTL 过期、对话历史容量 50 条 FIFO 淘汰、情景记忆 30 天时间衰减；但薄弱点 mastery < 40 的记录永久保留且权重 ×2，不能忘" |
+| "RAG 和 Memory 怎么选？" | "智能路由：知识题走 RAG（Hybrid+Rerank），历史追问走 Memory，混合场景两路并行合并上下文" |
+| "为什么不用 Neo4j 做知识图谱？" | "Hello-Agents 用 Neo4j 做实体关系推理，但面试场景的知识点关系相对简单（标签层级），用 MySQL 标签 + Milvus 向量检索已够用，避免引入额外中间件增加运维成本" |
 
 ### 5.5 RAG 深度检索模块（★ 核心区分度）
 
@@ -567,6 +867,86 @@ ai-service/rag/
 └── SemanticCache.java               # ★ 新增：语义缓存
 ```
 
+#### 5.5.6 快速询问 Quick Ask（★ 2026-06-25 新增：RAG + MCP 联网混合）
+
+> **场景**：用户在主页搜索框直接提问（像浏览器地址栏），不限于题库已有的题目。
+> 题库有的 → RAG 检索精准答案；题库没有的 → MCP 联网搜索最新内容补充。
+
+**与现有 `/rag/chat` 的区别**：
+
+| 维度 | `/rag/chat`（已有） | `/rag/quick-ask`（新增） |
+|------|---------------------|------------------------|
+| 数据源 | 仅题库（Milvus + ES） | 题库 + MCP 联网搜索 |
+| 适用场景 | 查题库已有面试题答案 | 题库没有的新技术/时效性问题 |
+| 入口 | RAG 模块页面 | 主页搜索框（像浏览器） |
+| 入库 | 不入库 | 用户可选入库（建立个人知识库） |
+| 缓存 | 语义缓存 Redis | 语义缓存 Redis（同） |
+
+**核心流程**：
+
+```
+用户在主页搜索框提问 POST /api/rag/quick-ask
+  │
+  ├── 1. 语义缓存查询（cosine > 0.95 → 命中直接返回）
+  │
+  ├── 2. RAG 检索题库（HybridRetriever 向量+BM25+RRF → Rerank）
+  │      → 命中相关题目？ → 用题库精准内容（精益求精，权威）
+  │
+  ├── 3. MCP 联网搜索（仅当题库命中不足或用户问时效性内容时触发）
+  │      → AI 判断是否需要联网（题库答案覆盖度 < 阈值 / 问"最新""2026""当前"等时效词）
+  │      → 调用 MCP 工具（web_search_exa）搜索网页
+  │      → 网页内容可能不准确，作为**补充**而非替代
+  │
+  ├── 4. 合并上下文：题库精准内容（高权重） + 联网搜索内容（低权重，标注来源）
+  │      → 拼接 Prompt：题库资料在前 + 联网资料在后 + 标注数据来源
+  │      → 通义千问生成回答（必须区分"题库答案"和"联网参考"）
+  │
+  ├── 5. 返回 QuickAskResponse
+  │      → answer（综合回答）
+  │      → sourceQuestions（命中的题库题目，引用溯源）
+  │      → webSources（联网搜索的 URL 列表，标注"参考"）
+  │      → cacheHit（是否命中缓存）
+  │      → canSaveToKb（是否可入库，true=用户可选择将此答案存入个人知识库）
+  │
+  └── 6. 用户可选入库 POST /api/rag/save-to-kb
+         → 用户得到答案后，选择"存入我的知识库"
+         → 将 question + answer 向量化 → 写入 Milvus（用户私有 collection）
+         → 也可选择不入库，仅查看
+```
+
+**MCP 联网搜索触发条件**（AI 判断 + 关键词规则兜底）：
+
+```java
+// 规则兜底：包含时效性关键词 → 触发 MCP 联网
+if (containsKeyword(query, "最新", "2026", "当前", "现在", "最近", "新版")) {
+    triggerWebSearch = true;
+}
+// RAG 命中不足 → 触发 MCP 联网
+if (topDocs.size() < 3 || avgRelevanceScore < 0.6) {
+    triggerWebSearch = true;
+}
+```
+
+**为什么要 RAG + MCP 混合**：
+
+| 问题 | 单 RAG | 单联网 | RAG + MCP 混合 |
+|------|--------|--------|----------------|
+| 题库有的题目 | ✅ 精准 | ❌ 网页可能不准 | ✅ 用题库权威答案 |
+| 题库没有的新技术 | ❌ 答不了 | ✅ 能查到 | ✅ 联网补充 |
+| 时效性问题 | ❌ 知识库过时 | ✅ 最新 | ✅ 联网最新 + 题库背景 |
+
+**面试讲点**：
+- "题库内容是精益求精的权威答案，联网内容可能不准但能覆盖时效性问题，两者混合取长补短"
+- "MCP 工具调用是 AI 主动判断的，不是每次都联网——题库有答案就不联网，省成本"
+- "用户可以选择将答案入库，建立个人知识库，下次再问直接命中"
+
+**新增 API**：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/rag/quick-ask` | 快速询问（RAG + MCP 混合） |
+| POST | `/api/rag/save-to-kb` | 用户选择将答案存入个人知识库 |
+
 ### 5.6 基础设施模块
 
 | 组件 | 实现 | 说明 |
@@ -581,6 +961,155 @@ ai-service/rag/
 | CORS | `CorsConfig` | 跨域配置 |
 | MyBatis-Plus | `MyBatisPlusConfig` | 分页插件 + 逻辑删除 |
 | Redisson | `RedissonConfig` | 分布式锁客户端 |
+
+### 5.7 前沿技术增强（★ 2026 最新，基于全网调研）
+
+> 以下 6 个方向基于 2026 年最新技术调研（Google Agentic RAG / Spring AI 2.0 / ACL 2026 论文 / GitHub 开源项目），
+> 结合 interview-arena 场景筛选，按优先级排列。标注"可落地"的为建议实现，"面试讲点"的为了简历叙事。
+
+#### 5.7.1 Spring AI 三层记忆压缩（P0，可落地）
+
+**来源**：Spring AI 2.0-RC1（2026-06）+ JAVAPRO 生产实践
+
+当前 Agent 模块用 Redis RList 手动管理对话历史。Spring AI 官方推荐三层记忆压缩：
+
+| 层 | Advisor | 作用 | 对应现有 |
+|----|---------|------|---------|
+| 第一层 | `MessageChatMemoryAdvisor` | 滑动窗口保留最近 20 条（会话级） | 替代 Redis RList 手动管理 |
+| 第二层 | `PromptChatMemoryAdvisor`（已 deprecated，用 SummaryAdvisor） | AI 生成对话摘要注入 Prompt（节省 token） | 新增 |
+| 第三层 | `VectorStoreChatMemoryAdvisor` | 对话历史向量化存 Milvus，语义检索历史 | 新增 |
+
+**Spring AI 2.0 关键变更**：
+- `MessageWindowChatMemory` 新增 turn-boundary snapping（RC1），不会截断半个对话轮次
+- `PromptChatMemoryAdvisor` 已 deprecated，推荐用 summary 压缩替代
+- Chat Memory advisors 需要显式 conversation ID（1.1.6 起强制）
+
+**落地方式**：
+```java
+@Bean
+ChatClient chatClient(ChatClient.Builder builder, ChatMemory chatMemory, VectorStore vectorStore) {
+    return builder
+        .defaultAdvisors(
+            MessageChatMemoryAdvisor.builder(chatMemory).build(),           // 第一层
+            // SummaryChatMemoryAdvisor（第二层，长面试摘要压缩）
+            VectorStoreChatMemoryAdvisor.builder(vectorStore).build()       // 第三层
+        )
+        .build();
+}
+```
+
+**面试讲点**："三层记忆压缩：滑动窗口管近期上下文，摘要压缩保长期连贯性，向量存储支持跨会话语义检索"
+
+#### 5.7.2 RAG Gap Detection — 跨会话薄弱点发现（P0，可落地）
+
+**来源**：GitHub Friday 项目（2026-02），5-Agent 面试模拟器
+
+Friday 的 Followup Agent 把每条用户回答向量化存 pgvector，用语义相似度检索历史回答，发现反复出现的薄弱点。
+
+**落地方式**：每次用户回答后，向量化存 Milvus，检索历史相似回答：
+```java
+public void detectRecurringGaps(Long userId, String answer, int mastery) {
+    // 1. 当前回答向量化
+    float[] embedding = embeddingModel.embed(answer);
+    // 2. 检索该用户历史回答中语义相似的（跨面试会话）
+    List<Record> similar = milvusService.searchUserHistory(userId, embedding, topK=5);
+    // 3. 多次同知识点低分 → 标记顽固薄弱点
+    if (similar.stream().filter(r -> r.getMastery() < 60).count() >= 2) {
+        knowledgeProfileService.markPersistent(userId, extractTopic(answer));
+    }
+}
+```
+
+**面试讲点**："不只是记住用户哪道题错，而是通过向量检索发现跨会话的重复薄弱点——两次面试都在 volatile 上卡住，系统自动标记为顽固薄弱点并优先考察"
+
+#### 5.7.3 Agentic RAG — 迭代检索直到够用（P1，可落地）
+
+**来源**：Google Gemini Enterprise Agent Platform Agentic RAG（2026）
+
+传统 RAG 检索一次就生成。Google 的 Agentic RAG 引入 "sufficient context" 机制：检索后判断信息是否足够，不够继续迭代检索，准确率提升 34%。
+
+**落地方式**：
+```java
+public String agenticRag(String query) {
+    int maxRounds = 3;
+    List<Document> context = new ArrayList<>();
+    for (int i = 0; i < maxRounds; i++) {
+        List<Document> batch = vectorStore.similaritySearch(
+            SearchRequest.query(query).withTopK(5));
+        context.addAll(batch);
+        if (isContextSufficient(query, context)) break;  // LLM 判断够不够
+        query = rewriteQuery(query, context);             // 不够则重写查询
+    }
+    return chatClient.prompt().user(query).context(context).call().content();
+}
+```
+
+**面试讲点**："借鉴 Google Agentic RAG，面试问答不是一次检索就回答，而是判断检索结果是否充分，不充分则重写查询迭代检索，最多 3 轮"
+
+#### 5.7.4 RetrievalAugmentationAdvisor — 模块化 RAG（P1，可落地）
+
+**来源**：Spring AI 2.0-RC1（2026-06）官方文档
+
+Spring AI 2.0 提供模块化 RAG Advisor，比 `QuestionAnswerAdvisor` 更灵活，支持查询重写 + 自定义检索 + 后处理（Rerank）：
+
+```java
+RetrievalAugmentationAdvisor.builder()
+    .queryTransformer(QueryTransformer.builder()           // 查询重写（类似 MQE）
+        .chatClientBuilder(chatClientBuilder).build())
+    .documentRetriever(VectorStoreDocumentRetriever.builder()  // 检索
+        .vectorStore(vectorStore).topK(10).build())
+    .documentPostProcessor(DocumentPostProcessor.builder()     // Rerank 后处理
+        .chatClientBuilder(chatClientBuilder).build())
+    .build();
+```
+
+**面试讲点**："用 Spring AI 2.0 的模块化 RAG Advisor，查询重写、检索、重排序都是可插拔模块，符合开闭原则"
+
+#### 5.7.5 多策略记忆检索 + RRF 融合（P2，可落地）
+
+**来源**：Engram（2026）+ MAGMA（ACL 2026）
+
+记忆检索不用单路 SQL，而是四路并行 + RRF 融合：
+```java
+public List<Memory> retrieveMemories(Long userId, String query) {
+    List<Memory> semantic = milvusService.searchSemantic(userId, query);  // 语义
+    List<Memory> keyword = mysqlService.searchKeyword(userId, query);     // 关键词
+    List<Memory> recent  = mysqlService.searchRecent(userId, 7);          // 最近7天
+    List<Memory> weak    = mysqlService.searchWeakPoints(userId);         // 薄弱点
+    return rrfFusion(Arrays.asList(semantic, keyword, recent, weak), 5);
+}
+```
+
+**面试讲点**："记忆检索四路并行（语义+关键词+时间+重要性）+ RRF 融合，确保既检索到相关历史又覆盖薄弱点"
+
+#### 5.7.6 面试记忆驱动学习路径（P2，可落地）
+
+**来源**：BUDDY（2026）+ LinkedIn Hiring Agent HLTM（2026）
+
+面试结束后，基于语义记忆中的薄弱点，从题库检索相关题目，生成个性化学习路径（激活 V2 已规划的 `learning_path` 表）：
+```java
+public LearningPath generatePath(Long userId) {
+    List<KnowledgeWeakness> weakPoints = profile.getWeakPoints();
+    Map<String, List<Question>> plan = new LinkedHashMap<>();
+    for (KnowledgeWeakness w : weakPoints) {
+        plan.put(w.getTopic(), ragService.hybridSearch(w.getTopic(), 5));
+    }
+    return new LearningPath(userId, plan, estimatedWeeks(weakPoints.size()));
+}
+```
+
+**面试讲点**："面试→发现薄弱→检索相关题目→生成学习路径→再面试验证，形成闭环"
+
+#### 5.7.7 技术增强优先级总览
+
+| 优先级 | 功能 | 难度 | 面试加分 | 所属模块 |
+|--------|------|------|---------|---------|
+| **P0** | Spring AI 三层记忆压缩 | 中 | ⭐⭐⭐ | Agent 记忆 |
+| **P0** | RAG Gap Detection | 中 | ⭐⭐⭐⭐ | Agent 记忆 + RAG |
+| **P1** | Agentic RAG 迭代检索 | 高 | ⭐⭐⭐ | RAG |
+| **P1** | RetrievalAugmentationAdvisor | 低 | ⭐⭐ | RAG |
+| **P2** | 多策略记忆检索+RRF | 高 | ⭐⭐ | Agent 记忆 |
+| **P2** | 学习路径生成 | 中 | ⭐⭐⭐ | 闭环体验 |
 
 ---
 
@@ -882,6 +1411,3 @@ sa-token:
 |--------|------|------|
 | P1 | Agent 模块 | 面试状态机 + @Tool + ChatMemory |
 | P1 | MCP 模块 | MCP Server 暴露工具 |
-| P2 | 网约车重构 | 派单/状态机/MQ 代码规范化 |
-| P2 | 网约车 AI 客服 | 复用 ai-service RAG + Agent |
-| P3 | RPC 框架完善 | 代码规范化 + 集成测试 |

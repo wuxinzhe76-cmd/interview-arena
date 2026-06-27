@@ -253,3 +253,19 @@ A: 算法题详情页改为响应式:
   <div className="... h-[50vh] lg:h-auto">          {/* 编辑器:小屏50vh */}
     <div className="flex-1 min-h-0">  {/* min-h-0 防止flex塌缩 */}
 ```
+
+---
+
+## 📚 八股复习清单（Step 11 · 前端架构与逻辑）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | 计算机网络 | **HTTP 与 HTTPS 的区别（TLS 握手过程）** | `2-Java相关内容/Java 面试题/计算机网络面试题速记通关版.pdf` |
+| 2 | 计算机网络 | **跨域问题与 CORS（预检请求 OPTIONS）** | `2-Java相关内容/Java 面试题/计算机网络面试题速记通关版.pdf` |
+| 3 | 计算机网络 | **Cookie / Session / Token 的区别** | `2-Java相关内容/Java 面试题/计算机网络面试题速记通关版.pdf` |
+| 4 | Spring | **拦截器 vs 过滤器的区别（执行顺序）** | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 5 | Redis | Token 白名单实现方案（Redis SET + TTL） | `4-后端设计相关内容/Redis/Redis面试题.md` |
+
+⏰ 复习顺序：读 `request.ts` 拦截器 → 背 CORS → **重点背 Cookie/Session/Token** → 背拦截器 vs 过滤器 → 合上文档自述

@@ -1,6 +1,6 @@
 # interview-arena · 开发进度追踪
 
-> 📅 最后更新:2026-06-18(Step 9 完成,下次开始 Step 10)
+> 📅 最后更新:2026-06-24(服务器安全加固 + 数据恢复完成,下次开始 RAG 在线检索)
 > 🎯 目的:跨会话延续上下文,避免下次重新解释项目背景
 
 > ⭐ **目录结构**:
@@ -234,9 +234,102 @@ public class HealthController {
 - [x] 问答归档:[`docs/qa/Step9-题库题目CRUD.md`](../docs/qa/Step9-题库题目CRUD.md)(Q1~Q9)
 - [x] 深度理解:autoResultMap 原理 / acceptanceRate 反范式 / 分页插件 JSqlParser / QueryWrapper 条件构造器 / BaseMapper+IService 封装 / JSON_CONTAINS 标签筛选 / apply 防注入
 
-### 立即任务:Step 10 判题模块(Docker 沙箱)(下次开始)
+### Step 10~13 已完成 ✅(2026-06-18 ~ 2026-06-20)
 
-**目标**:实现代码提交 + Docker 沙箱执行 + 判题结果回写,为 AI 面试模块提供编程题判题能力。
+- [x] Step 10: Docker 沙箱判题模块
+- [x] Step 11: 前端架构与逻辑
+- [x] Step 12: 后端补充内容
+- [x] Step 13: RAG 模块基础（Spring AI + DashScope + Milvus）
+  - ETL 导入 830 条面试题到 Milvus（已跑通）
+  - RagConfig.java（ChatClient Bean）
+  - RagService.java（离线索引逻辑）
+  - RagController.java（/rag/import 导入接口）
+  - 踩坑记录：WebClient 依赖缺失 / chatModel null / Milvus 容器 / MySQL max_allowed_packet / DashScope 批量限制 10 条
+
+### Step 14: 服务器安全加固 + 数据恢复 ✅(2026-06-24)
+
+**背景**：MySQL 被勒索攻击，数据全丢。根因：3306 端口 `0.0.0.0` 暴露公网 + root 弱口令 `root`。
+
+**安全加固完成**：
+
+| 服务 | 加固内容 | 状态 |
+|------|---------|------|
+| MySQL | root 密码 → `Arena@2026SecurePwd`，镜像升级到 8.4，端口绑 `127.0.0.1` | ✅ |
+| Redis | 无密码 → `Redis@2026Secure`，禁用 CONFIG/FLUSHALL/FLUSHDB，端口绑 `127.0.0.1` | ✅ |
+| RabbitMQ | `admin123` → `Mq@2026Secure`，端口绑 `127.0.0.1` | ✅ |
+| Elasticsearch | 端口绑 `127.0.0.1` | ✅ |
+| Milvus | 端口绑 `127.0.0.1` | ✅ |
+| 后端 8080 | `ports` → `expose`（仅 Nginx 反代访问） | ✅ |
+| Nginx 80 | 唯一公网端口 | ✅ |
+
+**数据恢复完成**：
+- [x] MySQL 全新建库（`CREATE DATABASE interview_arena`）
+- [x] Flyway 自动建表成功（V1~V4，8 张表：user/question/question_bank/judge_result 等）
+- [x] 后端启动成功（`Started InterviewArenaApplication in 6.784 seconds`）
+- [x] RabbitMQ 连接成功
+- [x] 前端 + Nginx 正常运行
+
+**网络架构修复**：
+- [x] 后端容器加入 `backend-env_default` 基础设施网络（`infra-net`）
+- [x] 后端用容器名连接 MySQL/Redis/RabbitMQ（`MYSQL_HOST=mysql` 而非 `host.docker.internal`）
+
+**SSH 配置**：
+- [x] 本地 `id_ed25519` 公钥注入服务器 `authorized_keys`
+- [x] SSH 免密连接成功（`ssh -i ~/.ssh/id_ed25519 root@117.72.62.12`）
+- [x] SSH 隧道：本地 13306 → 远程 3306（`ssh -fN -L 13306:127.0.0.1:3306 root@117.72.62.12`）
+
+**修改的文件**：
+- [x] `application.yaml` — MySQL/Redis/RabbitMQ 密码更新（本地开发）
+- [x] `application-prod.yaml` — 密码更新（生产环境）
+- [x] `docker-compose.yml` — 后端 `expose` 替代 `ports` + 注入密码环境变量 + `infra-net` 网络 + 容器名连接
+- [x] `.gitignore` — 忽略 `docs/qa/`、`docs/八股映射表.md`、`docs/面试亮点.md`、`tasks/`（个人学习资料）
+- [x] 服务器 `/root/backend-env/docker-compose.yml` — 基础设施安全加固版
+
+**服务器关键信息**：
+- IP: `117.72.62.12`
+- MySQL: `Arena@2026SecurePwd`（端口 127.0.0.1:3306）
+- Redis: `Redis@2026Secure`（端口 127.0.0.1:6379）
+- RabbitMQ: `admin` / `Mq@2026Secure`（端口 127.0.0.1:5672）
+- Milvus: 端口 127.0.0.1:19530
+- SSH: `ssh -i ~/.ssh/id_ed25519 root@117.72.62.12`
+
+**安全加固指南**：[`3-通识内容/服务器安全加固/服务器安全加固指南.md`](../../3-通识内容/服务器安全加固/服务器安全加固指南.md)
+
+### blueprint.md 更新完成 ✅(2026-06-24)
+
+- [x] 5.4 节新增「记忆分层架构」子章节（借鉴 Hello-Agents 第八章 + Spring AI 落地）
+  - 三层记忆模型（工作记忆/情景记忆/语义记忆）
+  - 记忆整合机制（Consolidation）
+  - 遗忘策略（Forgetting）
+  - 记忆驱动智能出题
+  - RAG + Memory 智能路由
+  - 2 张新表：user_knowledge_profile / user_memory_summary
+  - 新增包结构：`com.charles.interview.arena.ai.memory/`
+- [x] 5.7 节新增「前沿技术增强」（2026 最新，基于全网调研）
+  - P0: Spring AI 三层记忆压缩（MessageChatMemoryAdvisor + VectorStoreChatMemoryAdvisor）
+  - P0: RAG Gap Detection（跨会话薄弱点发现，来自 Friday 项目）
+  - P1: Agentic RAG（Google 迭代检索直到够用，准确率 +34%）
+  - P1: RetrievalAugmentationAdvisor（Spring AI 2.0 模块化 RAG）
+  - P2: 多策略记忆检索 + RRF 融合（Engram + MAGMA）
+  - P2: 面试记忆驱动学习路径（BUDDY + LinkedIn HLTM）
+
+### hello-agents 项目克隆 ✅(2026-06-24)
+
+- [x] 克隆到 `/Users/a1234/hello-agents`（浅克隆，1676 文件）
+- [x] 第八章图片修复：GitHub raw 链接 → 本地相对路径 + HTML `<div>` → Markdown 语法
+- [x] 中英文版图片都已修复
+
+### 立即任务:Step 15 RAG 在线检索（下次开始）
+
+**当前 RAG 状态**：
+- ✅ ETL 离线索引已完成（RagService.importQuestionsToVectorStore）
+- ⬜ **在线检索链路还没做**（QuestionAnswerAdvisor + /rag/chat 接口）
+
+**下一步要做的事**：
+1. Milvus 数据被攻击后丢失，需要重新导入面试题向量（调 /rag/import 接口）
+2. 在 RagConfig 加 QuestionAnswerAdvisor（挂载 VectorStore）
+3. 写 /rag/chat 在线问答接口（用户提问 → 向量检索 → Prompt 拼接 → 通义千问生成）
+4. 后续升级：Hybrid Search（BM25 + 向量 + RRF）→ Rerank → 评估指标 → 语义缓存
 
 **待写代码**(参考 blueprint 5.3 节):
 

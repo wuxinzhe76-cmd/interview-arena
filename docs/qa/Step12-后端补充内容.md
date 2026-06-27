@@ -136,3 +136,21 @@ docker exec mysql mysql -uroot -proot -e "SET GLOBAL max_allowed_packet=67108864
 ```
 
 注意:SET GLOBAL 需要重新连接才生效。
+
+---
+
+## 📚 八股复习清单（Step 12 · 后端补充内容）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | Spring | **拦截器 HandlerInterceptor 原理（preHandle/postHandle/afterCompletion）** | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 2 | Spring | WebMvcConfigurer 配置（addInterceptors/addCorsMappings） | `2-Java相关内容/spring框架/Spring面试题.md` |
+| 3 | Java基础 | **JWT 原理与结构（Header.Payload.Signature）** | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 4 | 后端场景 | **踢用户下线（Redis 删 Token 白名单）** | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+| 5 | 后端场景 | 接口签名验证（JWT 签名校验） | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+| 6 | 后端场景 | **敏感数据加密存储（BCrypt 密码加密）** | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+| 7 | 后端场景 | **防止接口被恶意刷量（登录失败锁定 5 次）** | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+
+⏰ 复习顺序：读 `JwtInterceptor.java` → 背 JWT 结构 → **重点背踢用户下线+防刷量** → 背拦截器原理 → 合上文档自述

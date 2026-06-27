@@ -564,3 +564,21 @@ userMapper.selectList(null);
 | P1 | LambdaUpdateWrapper | 能写条件更新 |
 | P2 | 代码生成器 | 自动生成 Entity/Mapper |
 | P2 | 自定义 SQL | 复杂查询写 XML |
+
+---
+
+## 📚 八股复习清单（Step 7 · MyBatis-Plus 核心知识）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | MyBatis | **MyBatis 的执行流程（SqlSession → Executor → StatementHandler）** | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 2 | MyBatis | 一级缓存与二级缓存（作用域、失效条件） | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 3 | MyBatis | ResultMap vs 自动映射（autoResultMap 的作用） | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 4 | MyBatis | TypeHandler 的作用与原理（JacksonTypeHandler） | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 5 | MyBatis | **#{} 与 ${} 的区别（SQL 注入防护）** | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 6 | 设计模式 | 代理模式（MapperProxy 动态代理） | `4-后端设计相关内容/设计模式/设计模式面试题.md` |
+| 7 | 设计模式 | 模板方法模式（BaseExecutor 的 doQuery） | `4-后端设计相关内容/设计模式/设计模式面试题.md` |
+
+⏰ 复习顺序：读 `MybatisPlusConfig.java` → 背执行流程 → **重点背 #{} vs ${}** → 背代理模式 → 合上文档自述

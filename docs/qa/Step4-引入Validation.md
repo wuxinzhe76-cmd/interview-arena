@@ -314,3 +314,19 @@ Spring Validation **不保证注解执行顺序**。`@NotBlank` 和 `@Email` 哪
 
 9. **Spring Boot 改了代码不生效怎么办？**
    → 检查文件是否保存 → clean 重新编译 → 重启应用。可引入 spring-boot-devtools 实现热重启。
+
+---
+
+## 📚 八股复习清单（Step 4 · 引入 Validation）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | Java基础 | 注解的原理与自定义注解（元注解 @Target/@Retention） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 2 | Java基础 | 反射机制（Validation 底层用反射读注解） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+| 3 | Spring | @Validated vs @Valid 的区别 | `2-Java相关内容/spring框架/SpringBoot面试题.md` |
+| 4 | Spring | BindingResult 的使用（参数位置必须在 @Valid 之后） | `2-Java相关内容/spring框架/SpringBoot面试题.md` |
+| 5 | Java基础 | 正则表达式与字符串转义（`\\d` 而非 `\d`） | `2-Java相关内容/Java基础/Java基础面试题.md` |
+
+⏰ 复习顺序：读 `UserRegisterDTO.java` 的注解 → 背注解原理 → 背 @Validated vs @Valid → 背正则转义 → 合上文档自述

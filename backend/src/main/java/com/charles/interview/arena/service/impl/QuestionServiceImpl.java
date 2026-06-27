@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -17,6 +18,8 @@ import com.charles.interview.arena.model.dto.QuestionAddDTO;
 import com.charles.interview.arena.model.dto.QuestionQueryDTO;
 import com.charles.interview.arena.model.entity.Question;
 import com.charles.interview.arena.model.vo.QuestionVO;
+import com.charles.interview.arena.rag.event.QuestionChangedEvent;
+import com.charles.interview.arena.rag.event.QuestionChangedEvent.Action;
 import com.charles.interview.arena.service.QuestionService;
 
 import lombok.RequiredArgsConstructor;
@@ -24,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> implements QuestionService {
+
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public Long addQuestion(QuestionAddDTO dto, Long userId) {
@@ -45,6 +50,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         }
         boolean saved = this.save(question);
         ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "题目创建失败");
+        // 发布题目新增事件 → RAG 增量入库（Milvus + ES）
+        eventPublisher.publishEvent(new QuestionChangedEvent(Action.ADD, question));
         return question.getId();
     }
 
@@ -54,13 +61,24 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         BeanUtils.copyProperties(dto, question);
         boolean updated = this.updateById(question);
         ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "题目更新失败");
+        // updateById 后 question 可能缺少部分字段，重新查完整对象再发事件
+        Question full = this.getById(question.getId());
+        if (full != null) {
+            eventPublisher.publishEvent(new QuestionChangedEvent(Action.UPDATE, full));
+        }
         return true;
     }
 
     @Override
     public Boolean deleteQuestion(Long id) {
+        // 删除前先查出完整对象（逻辑删除后 getById 查不到）
+        Question question = this.getById(id);
         boolean removed = this.removeById(id);
         ThrowUtils.throwIf(!removed, ErrorCode.OPERATION_ERROR, "题目删除失败");
+        if (question != null) {
+            // 发布题目删除事件 → RAG 增量删除（Milvus + ES）
+            eventPublisher.publishEvent(new QuestionChangedEvent(Action.DELETE, question));
+        }
         return true;
     }
 

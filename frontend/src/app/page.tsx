@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight, Brain, Code2, Trophy } from 'lucide-react';
+import RagSearch from '@/components/RagSearch';
 
 export default function HomePage() {
   return (
@@ -26,7 +27,11 @@ export default function HomePage() {
             AI 模拟面试,深度追问,像真实面试官一样考察你。
           </p>
 
-          <div className="flex items-center justify-center gap-4">
+          {/* RAG AI 搜索 */}
+          <RagSearch />
+
+          {/* 行动按钮 */}
+          <div className="flex items-center justify-center gap-4 mt-8">
             <Link
               href="/problems"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-ink text-cream font-medium hover:bg-ink/90 transition-all hover:scale-105"

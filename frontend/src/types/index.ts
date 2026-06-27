@@ -85,3 +85,15 @@ export interface QuestionSubmitDTO {
   languageCode: string;
   code: string;
 }
+
+// ========== RAG ==========
+export interface SourceQuestion {
+  questionId: number;
+  title: string;
+}
+
+export interface RagChatResponse {
+  answer: string;
+  sourceQuestions: SourceQuestion[];
+  cacheHit: boolean;
+}

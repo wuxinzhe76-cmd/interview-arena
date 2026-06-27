@@ -551,3 +551,22 @@ this.lambdaUpdate()
 ### 面试讲法
 
 > "MP 的 `BaseMapper` 封装了单表 CRUD 的 17 个方法,`IService` 再加一层业务封装(批量、saveOrUpdate、链式 Lambda)。我的项目里 User/QuestionBank/Question 都是单表操作,完全没写 XML,靠继承就完成了增删改查分页。只有后续多表关联查询(如题库下查题目+题库信息)才需要自定义 XML 或 JOIN。"
+
+---
+
+## 📚 八股复习清单（Step 9 · 题库/题目 CRUD）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | MyBatis | QueryWrapper / LambdaQueryWrapper 的原理 | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 2 | MyBatis | 分页插件原理（拦截器改写 SQL 加 LIMIT） | `2-Java相关内容/MyBatis/MyBatis面试题.md` |
+| 3 | MySQL | **索引设计原则（哪些字段该建索引）** | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 4 | MySQL | **深度分页问题（LIMIT 100000, 10 如何优化）** | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 5 | MySQL | 联合索引与最左前缀原则 | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 6 | Redis | **缓存穿透 / 缓存击穿 / 缓存雪崩（三大问题）** | `4-后端设计相关内容/Redis/Redis面试题.md` |
+| 7 | Redis | **缓存与数据库双删一致性** | `4-后端设计相关内容/Redis/Redis面试题.md` |
+| 8 | 后端场景 | 接口变慢如何排查（慢查询、索引、缓存） | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+
+⏰ 复习顺序：读 `QuestionController.java` → 背索引设计 → **重点背深度分页+缓存三大问题** → 背双删一致性 → 合上文档自述

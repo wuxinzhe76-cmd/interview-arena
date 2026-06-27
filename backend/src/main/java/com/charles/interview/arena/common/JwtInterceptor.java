@@ -30,7 +30,9 @@ public class JwtInterceptor implements HandlerInterceptor {
             "/api/question/list/page/vo",
             "/api/question/get/vo",
             "/api/questionBank/list/page/vo",
-            "/api/questionBank/get/vo"
+            "/api/questionBank/get/vo",
+            // RAG 搜索建议公开(首页搜索框,未登录也能用)
+            "/api/rag/suggest"
     );
 
     @Override

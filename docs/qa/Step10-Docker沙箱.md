@@ -372,3 +372,20 @@ public class MockCodeSandbox implements CodeSandbox {
 - 存结果
 
 等 Docker 环境搭好,把 `@Primary` 去掉或删除 Mock 实现即可。
+
+---
+
+## 📚 八股复习清单（Step 10 · Docker 沙箱）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | 操作系统 | **进程隔离原理（Linux namespace / cgroup）** | `2-Java相关内容/Java 面试题/操作系统面试题速记通关版.pdf` |
+| 2 | Java并发 | ProcessBuilder 执行外部命令 | `2-Java相关内容/Java并发/Java并发面试题.md` |
+| 3 | 计算机网络 | 网络隔离（--network=none 的原理） | `2-Java相关内容/Java 面试题/计算机网络面试题速记通关版.pdf` |
+| 4 | Java并发 | **线程池参数配置（核心线程数/最大线程数/队列/拒绝策略）** | `2-Java相关内容/Java并发/Java并发面试题.md` |
+| 5 | Java并发 | CompletableFuture 异步编排 | `2-Java相关内容/Java并发/Java并发面试题.md` |
+| 6 | 后端场景 | 敏感词过滤（代码执行安全） | `4-后端设计相关内容/后端场景/后端场景面试题.md` |
+
+⏰ 复习顺序：读 `DockerCodeSandbox.java` → 背 namespace/cgroup → **重点背线程池参数** → 背 CompletableFuture → 合上文档自述

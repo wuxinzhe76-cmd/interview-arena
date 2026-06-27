@@ -176,3 +176,20 @@ CREATE DATABASE IF NOT EXISTS interview_arena
 
 5. **Spring Boot 连接 MySQL 的 URL 参数有哪些？**
    → useUnicode / characterEncoding / useSSL / serverTimezone 是常用参数。
+
+---
+
+## 📚 八股复习清单（Step 5 · 中间件连接）
+
+> 完成本步骤后，请背诵以下八股题。完整映射表见 `docs/八股映射表.md`
+
+| # | 八股题 | 题目关键词 | 文件位置 |
+|---|--------|-----------|---------|
+| 1 | Spring | **Spring Boot 自动配置原理（spring.factories / @EnableAutoConfiguration）** | `2-Java相关内容/spring框架/SpringBoot面试题.md` |
+| 2 | Spring | Starter 机制（为什么引入依赖就能用） | `2-Java相关内容/spring框架/SpringBoot面试题.md` |
+| 3 | MySQL | **utf8 vs utf8mb4 的区别（utf8 只支持 3 字节，存不了 emoji）** | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 4 | MySQL | MySQL 连接参数（时区/SSL/编码） | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 5 | MySQL | MySQL 8 认证插件 caching_sha2_password | `4-后端设计相关内容/MySQL/mysql面试题.md` |
+| 6 | Redis | Redis 连接配置与连接池（Lettuce vs Jedis） | `4-后端设计相关内容/Redis/Redis面试题.md` |
+
+⏰ 复习顺序：读 `application.yaml` 的配置 → 背自动配置原理 → **重点背 utf8mb4** → 背 Redis 连接池 → 合上文档自述
