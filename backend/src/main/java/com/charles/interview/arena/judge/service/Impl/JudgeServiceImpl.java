@@ -17,7 +17,7 @@ import com.charles.interview.arena.model.entity.JudgeResult;
 import com.charles.interview.arena.model.entity.Question;
 import com.charles.interview.arena.model.entity.Submission;
 import com.charles.interview.arena.model.entity.TestCase;
-import com.charles.interview.arena.service.QuestionService;
+import com.charles.interview.arena.admin.service.QuestionService;
 
 import lombok.RequiredArgsConstructor;
 

@@ -9,6 +9,7 @@ public class InterviewArenaApplication {
 
 	public static void main(String[] args) {
 		SpringApplication.run(InterviewArenaApplication.class, args);
+	
 	}
 
 }

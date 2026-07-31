@@ -15,6 +15,14 @@
 
 核心差异化:深度 AI 集成(不是简单的 AI 对话包装,而是贯穿全流程的智能辅助)。
 
+### 核心基础能力
+
+| 模块 | 技术方案 | 核心特性 |
+|------|---------|---------|
+| **面试题 CRUD** | MyBatis-Plus | 题目/题库增删改查、批量操作、分页查询、多条件筛选、多对多关联管理 |
+| **用户登录鉴权** | JWT + Redis | 双 token 机制（accessToken 2h + refreshToken 7d）、拦截器统一认证、白名单放行、Redis token 状态管理 |
+| **接口限流** | Sentinel | 按 HTTP 路径 + 用户维度 QPS 限流、匿名与登录用户差异化流控、熔断降级保护、ThreadLocal 上下文清理 |
+
 ### 目标用户
 
 - 2028 秋招在校生(刷题 + AI 模拟面试)
@@ -351,19 +359,42 @@ create table if not exists interview_record (
 
 **现有代码**: `QuestionBankController` / `QuestionController` / `QuestionBankQuestionController`
 
-| 功能 | API | 说明 |
-|------|-----|------|
-| 题库 CRUD | POST `/questionBank/add` `/update` `/delete` `/get/vo` | 标题+描述+图片 |
-| 题库分页 | POST `/questionBank/list/page/vo` | MyBatis-Plus 分页 |
-| 题目 CRUD | POST `/question/add` `/update` `/delete` `/get/vo` | 标题+内容+标签+答案+难度+类型 |
-| 题目分页 | POST `/question/list/page/vo` | 多维度筛选 |
-| 题目搜索 | POST `/question/search/page/vo` | Elasticsearch 全文搜索 |
-| 批量删除 | POST `/question/delete/batch` | 批量操作 |
-| 关联管理 | POST `/questionBankQuestion/add` `/batchAdd` `/batchRemove` | 题库-题目多对多 |
+#### 5.2.1 面试题 CRUD 设计
 
-**搜索**: Elasticsearch 索引 `question`,字段 `title` + `content` + `tags`。
+| 功能 | API | 实现细节 |
+|------|-----|---------|
+| 新增题目 | POST `/api/question/add` | 标题+内容+标签+答案+难度+类型，自动注入 userId，Elasticsearch 同步索引 |
+| 更新题目 | POST `/api/question/update` | 全量更新，同步更新 ES 索引，发布 `QuestionChangedEvent` 事件 |
+| 删除题目 | DELETE `/api/question/delete/{id}` | 逻辑删除，同步删除 ES 文档 |
+| 题目详情 | GET `/api/question/get/vo/{id}` | VO 转换，标签格式化展示 |
+| 分页查询 | POST `/api/question/list/page/vo` | 多维度筛选（难度/标签/类型/关键词），MP 分页插件 |
+| 全文搜索 | POST `/api/question/search/page/vo` | Elasticsearch 跨字段检索（title/content/tags） |
 
-**缓存**: Caffeine 本地缓存 + JD HotKey 热点探测。
+#### 5.2.2 题库 CRUD 与关联管理
+
+| 功能 | API | 实现细节 |
+|------|-----|---------|
+| 题库 CRUD | `/api/questionBank/add` `/update` `/delete` `/get/vo` | 标题+描述+封面图片 |
+| 题库分页 | `/api/questionBank/list/page/vo` | MyBatis-Plus 分页，支持名称模糊查询 |
+| 单题加入题库 | POST `/api/question/bank/add` | question_bank_question 中间表写入 |
+| 批量加入题库 | POST `/api/question/bank/batchAdd` | 批量插入中间表，事务保障 |
+| 批量移出题库 | POST `/api/question/bank/batchRemove` | 批量删除中间表 |
+| 题库题目列表 | GET `/api/question/bank/list/{bankId}` | 查中间表 + 联查题目详情 |
+
+#### 5.2.3 技术要点
+
+**数据层**：
+- MyBatis-Plus `IService` + `BaseMapper`，代码生成器减少样板代码
+- `question_bank_question` 中间表维护多对多关系，唯一索引防重复
+- 逻辑删除 `isDelete` 字段，数据可恢复
+
+**搜索层**：
+- Elasticsearch 索引 `question`，字段：`title` + `content` + `tags`
+- 题目新增/更新时异步同步 ES，解耦主流程
+
+**缓存层**：
+- Caffeine 本地缓存热点题目（高频访问不打 DB）
+- 题目变更事件触发缓存失效（`@CacheEvict`）
 
 ### 5.3 判题模块
 
@@ -819,7 +850,7 @@ Top-10 候选 Chunk → Reranker 模型精排 → Top-5 注入 Prompt
 - 精排阶段用 Cross-Encoder（逐对打分，精度高但慢）
 - 两阶段架构：召回 100→10，精排 10→5
 
-**技术选型**：DashScope Rerank API 或本地 BGE-Reranker-v2-m3
+**技术选型**：DashScope gte-rerank API
 
 **面试讲点**：Bi-Encoder vs Cross-Encoder 的区别，为什么不能全用 Cross-Encoder（性能）
 
@@ -949,18 +980,51 @@ if (topDocs.size() < 3 || avgRelevanceScore < 0.6) {
 
 ### 5.6 基础设施模块
 
+#### 5.6.1 统一响应与异常处理
+
 | 组件 | 实现 | 说明 |
 |------|------|------|
 | 统一响应体 | `BaseResponse<T>` | code(0=成功) + message + data |
 | 全局异常 | `GlobalExceptionHandler` | `@RestControllerAdvice` + `@ExceptionHandler` |
 | 业务异常 | `BusinessException` | 携带 ErrorCode |
-| 权限拦截 | `AuthInterceptor` + `@AuthCheck` | AOP 注解式权限校验 |
-| 请求日志 | `LogInterceptor` | URL + 参数 + 耗时 |
-| IP 黑名单 | `BlackIpFilter` + `NacosListener` | Nacos 动态配置黑名单 |
-| 限流 | `Sentinel` | SentinelRulesManager 规则管理 |
+
+#### 5.6.2 用户认证体系（JWT 双 Token）
+
+```java
+// 认证流程
+用户登录 → 生成 accessToken(2h) + refreshToken(7d) → Redis 存储
+请求接口 → JwtInterceptor 解析 token → Redis 校验状态匹配
+token 过期 → 调用 /user/refresh 用 refreshToken 换新 token
+登出 → 删除 Redis token
+```
+
+**核心实现**：
+- `JwtUtil`：token 生成/解析/校验，支持双 token 类型识别
+- `JwtInterceptor`：拦截器统一认证 + URL 白名单放行 + Sentinel 上下文注入
+- Redis 存储：`access:{userId}` 键存储当前有效 accessToken，支持强制下线
+
+#### 5.6.3 Sentinel 流量控制
+
+```java
+// 流控策略
+ContextUtil.enter(path, origin)  // 注入用户上下文
+SphU.entry(path)                  // 按路径限流
+origin = "anonymous" / "user:{id}" // 匿名与登录用户差异化限流
+```
+
+**核心特性**：
+- 维度：HTTP 路径 + 用户 origin 双维度
+- ThreadLocal 存储 Sentinel Entry，`afterCompletion` 时清理防泄漏
+- 限流返回："请求过于频繁，请稍后重试"
+
+#### 5.6.4 其他基础设施
+
+| 组件 | 实现 | 说明 |
+|------|------|------|
 | CORS | `CorsConfig` | 跨域配置 |
-| MyBatis-Plus | `MyBatisPlusConfig` | 分页插件 + 逻辑删除 |
-| Redisson | `RedissonConfig` | 分布式锁客户端 |
+| MyBatis-Plus | `MybatisPlusConfig` | 分页插件 + 逻辑删除 + 自动填充 |
+| Redis 缓存 | `CacheConfig` | Caffeine 本地缓存 + Redis 分布式缓存 |
+| 自动填充 | `MyMetaObjectHandler` | createTime/updateTime 自动注入 |
 
 ### 5.7 前沿技术增强（★ 2026 最新，基于全网调研）
 
@@ -1409,5 +1473,98 @@ sa-token:
 
 | 优先级 | 模块 | 说明 |
 |--------|------|------|
-| P1 | Agent 模块 | 面试状态机 + @Tool + ChatMemory |
+| P1 | Agent 模块 | 多 Agent 架构（见 §5.8） |
 | P1 | MCP 模块 | MCP Server 暴露工具 |
+
+---
+
+## 5.8 Agent 模块架构设计（2026-06-27 新增）
+
+> 参考：Google Agentic RAG、CoMAI 多 Agent 面试论文、Spring AI Alibaba 多 Agent 编排
+
+### 5.8.1 整体架构：Multi-Agent + Agentic RAG
+
+```
+                        用户请求
+                           │
+                    ┌──────▼──────┐
+                    │ LlmRouting  │  ← 意图路由 Agent
+                    │   Agent     │
+                    └──┬───┬───┬──┘
+                       │   │   │
+            ┌──────────┘   │   └──────────┐
+            ▼              ▼              ▼
+     ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+     │  RAG Agent   │ │ Interview│ │  Practice    │
+     │ (知识问答)    │ │  Agent   │ │  Agent       │
+     │              │ │ (面试)   │ │ (刷题)        │
+     │ 工具:        │ │          │ │              │
+     │ ├searchLocal │ │ 工具:    │ │ 工具:        │
+     │ ├searchWeb   │ │ ├pickQ   │ │ ├submitCode  │
+     │ └gradeResult │ │ ├evaluate│ │ └getHint     │
+     └──────────────┘ │ └saveRecord│ └──────────────┘
+                      └──────────┘
+```
+
+### 5.8.2 Spring AI Alibaba 4 种编排模式
+
+| 编排模式 | 类名 | 用途 | 本项目场景 |
+|---------|------|------|-----------|
+| 意图路由 | `LlmRoutingAgent` | Router LLM 决定分发到哪个子 Agent | 用户意图判断 |
+| 顺序执行 | `SequentialAgent` | Agent 按固定顺序执行，输出串联 | 面试流程：抽题→回答→评分 |
+| 并行执行 | `ParallelAgent` | 多个 Agent 同时执行，结果合并 | searchLocal + searchWeb 并行 |
+| 循环执行 | `LoopAgent` | 重复执行直到条件满足 | 追问循环：评分不够继续问 |
+
+### 5.8.3 Agent 工具清单
+
+| Agent | 工具 | 说明 | 复用现有代码 |
+|-------|------|------|------------|
+| RAG Agent | `searchLocal` | 搜本地知识库（Milvus+ES） | 复用 HybridRetriever |
+| RAG Agent | `searchWeb` | 搜网络最新资料 | 新建（Tavily API） |
+| Interview Agent | `pickQuestion` | 从题库抽题 | 复用 QuestionService |
+| Interview Agent | `evaluateAnswer` | 评估用户回答 | 新建 |
+| Interview Agent | `saveRecord` | 保存面试记录 | 复用 InterviewRecordService |
+| Practice Agent | `submitCode` | 提交代码判题 | 复用 JudgeService |
+| Practice Agent | `getHint` | 获取提示 | 新建 |
+
+### 5.8.4 开发路线（7 步，最小颗粒度）
+
+| Step | 做什么 | 学什么 | 编排模式 | 对应八股 |
+|------|--------|--------|---------|---------|
+| 1 | ReactAgent 最简骨架 | ChatModel + builder | 无 | 2.1 Models |
+| 2 | System Prompt | 面试官人设 | 无 | 2.3 Prompts |
+| 3 | @Tool searchLocal | 工具定义 | 无 | 2.4 Tools |
+| 4 | @Tool searchWeb | 网络搜索 | 无 | 2.4 Tools |
+| 5 | MemorySaver | 多轮记忆 | 无 | 2.6 Memory |
+| 6 | 结构化输出 | 返回 DTO | 无 | 2.9 Structured Output |
+| 7 | LlmRoutingAgent | 意图路由 | RoutingAgent | 多 Agent |
+
+### 5.8.5 后续进阶
+
+| Step | 做什么 | 编排模式 |
+|------|--------|---------|
+| 8 | 面试流程 | SequentialAgent |
+| 9 | 本地+网络并行搜 | ParallelAgent |
+| 10 | 追问循环 | LoopAgent |
+| 11 | Hooks 日志+脱敏 | Hooks |
+| 12 | 三层记忆 | Context Engineering |
+
+### 5.8.6 项目文件结构
+
+```
+backend/src/main/java/com/charles/interview/arena/
+├── config/
+│   ├── RagConfig.java          ← 已有（ChatClient）
+│   └── AgentConfig.java        ← 新建（Agent Bean 配置）
+├── agent/
+│   ├── controller/
+│   │   └── AgentController.java    ← API 入口
+│   ├── service/
+│   │   └── AgentService.java       ← Agent 调用入口
+│   └── tool/
+│       ├── SearchLocalTool.java    ← 搜本地知识库
+│       ├── SearchWebTool.java      ← 搜网络
+│       ├── PickQuestionTool.java   ← 抽面试题
+│       └── EvaluateTool.java       ← 评分
+└── rag/                            ← 已有（传统 RAG）
+```

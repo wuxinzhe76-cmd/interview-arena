@@ -97,3 +97,44 @@ export interface RagChatResponse {
   sourceQuestions: SourceQuestion[];
   cacheHit: boolean;
 }
+
+// ========== AI 面试 ==========
+export interface InterviewStartDTO {
+  mode: number; // 1-指定题库, 2-大厂随机
+  bankId?: number;
+}
+
+export interface InterviewAnswerDTO {
+  sessionId: number;
+  answer: string;
+}
+
+export interface InterviewStartVO {
+  sessionId: number;
+  openingQuestion: string;
+}
+
+export interface InterviewAnswerVO {
+  replyToUser: string;
+  actionDirective: string; // DEEP_DIVE / NEXT_QUESTION / END_INTERVIEW
+  currentTopicMastery: number;
+  isEnded: boolean;
+}
+
+// ========== Quick Ask ==========
+export interface QuickAskDTO {
+  query: string;
+}
+
+export interface QuickAskResponse {
+  answer: string;
+  sourceQuestions: SourceQuestion[];
+  webSources: string[];
+  cacheHit: boolean;
+  canSaveToKb: boolean;
+}
+
+export interface SaveToKbDTO {
+  question: string;
+  answer: string;
+}

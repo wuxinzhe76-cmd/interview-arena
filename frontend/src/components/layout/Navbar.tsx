@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUserStore } from '@/store/user';
 import { userApi } from '@/lib/api';
-import { Code2, LogOut, User } from 'lucide-react';
+import { Brain, Code2, LogOut, User } from 'lucide-react';
 
 export function Navbar() {
   const { user, accessToken, logout, loadFromStorage } = useUserStore();
@@ -67,6 +67,13 @@ export function Navbar() {
             className="text-sm font-medium text-ink/70 hover:text-ink transition-colors"
           >
             算法
+          </Link>
+          <Link
+            href="/interview"
+            className="flex items-center gap-1 text-sm font-medium text-accent hover:text-accent-dark transition-colors"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            AI 面试
           </Link>
 
           {accessToken ? (

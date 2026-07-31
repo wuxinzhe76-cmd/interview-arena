@@ -1,12 +1,32 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Search, Sparkles, Send, Loader2, BookOpen, Zap, ArrowRight, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { ragApi, questionApi } from '@/lib/api';
-import type { RagChatResponse, QuestionVO } from '@/types';
+import type { QuestionVO, SourceQuestion } from '@/types';
 
 type SearchMode = 'ai' | 'question';
+
+/**
+ * 过滤 LLM 输出中的 <think>...</think> 思考过程标签
+ * 处理流式输出中标签未闭合的情况（think 仍在生成时隐藏其内容）
+ */
+function filterThinkTags(text: string): string {
+  // 1. 移除已闭合的 <think>...</think>
+  let filtered = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  // 2. 处理未闭合的 <think>（流式过程中 think 块还在输出，隐藏从 <think> 开始的内容）
+  const openIdx = filtered.lastIndexOf('<think>');
+  if (openIdx !== -1) {
+    const afterOpen = filtered.substring(openIdx);
+    if (!afterOpen.includes('</think>')) {
+      filtered = filtered.substring(0, openIdx);
+    }
+  }
+  return filtered;
+}
 
 export default function RagSearch() {
   const [mode, setMode] = useState<SearchMode>('ai');
@@ -14,12 +34,23 @@ export default function RagSearch() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<RagChatResponse | null>(null);
   const [questions, setQuestions] = useState<QuestionVO[]>([]);
   const [error, setError] = useState('');
+  // AI 流式回答状态
+  const [streamingAnswer, setStreamingAnswer] = useState('');
+  const [streamingSources, setStreamingSources] = useState<SourceQuestion[]>([]);
+  const [cacheHit, setCacheHit] = useState(false);
+  const abortRef = useRef<{ abort: () => void } | null>(null);
   const debounceTimer = useRef<NodeJS.Timeout>();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // 组件卸载时取消进行中的流式请求
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   // 防抖搜索建议（AI 模式用 ES suggest，题目模式用 question list）
   const fetchSuggestions = useCallback(async (val: string, currentMode: SearchMode) => {
@@ -50,14 +81,18 @@ export default function RagSearch() {
     debounceTimer.current = setTimeout(() => fetchSuggestions(val, mode), 300);
   };
 
-  // 切换模式时清空状态
+  // 切换模式时清空状态 + 取消流式请求
   const switchMode = (newMode: SearchMode) => {
     if (mode === newMode) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
     setMode(newMode);
     setQuery('');
     setSuggestions([]);
     setShowSuggest(false);
-    setResult(null);
+    setStreamingAnswer('');
+    setStreamingSources([]);
+    setCacheHit(false);
     setQuestions([]);
     setError('');
     inputRef.current?.focus();
@@ -68,29 +103,55 @@ export default function RagSearch() {
     e.preventDefault();
     if (!query.trim() || loading) return;
 
+    // 取消上一个流式请求
+    abortRef.current?.abort();
+    abortRef.current = null;
+
     setShowSuggest(false);
     setLoading(true);
     setError('');
-    setResult(null);
+    setStreamingAnswer('');
+    setStreamingSources([]);
+    setCacheHit(false);
     setQuestions([]);
 
-    try {
-      if (mode === 'ai') {
-        // AI 询问 → 走 RAG 链路
-        const res = await ragApi.chat(query.trim());
-        setResult(res.data);
-      } else {
-        // 题目搜索 → 走 MySQL/ES 链路
-        const res = await questionApi.list({ title: query.trim(), current: 1, pageSize: 20 });
-        setQuestions(res.data?.records || []);
-      }
+    if (mode === 'ai') {
+      // AI 询问 -> 走流式 RAG 链路（SSE）
+      const controller = ragApi.chatStream(query.trim(), {
+        onMeta: (meta) => {
+          setCacheHit(meta.cacheHit);
+          setStreamingSources(meta.sourceQuestions || []);
+        },
+        onToken: (token) => {
+          setStreamingAnswer((prev) => prev + token);
+        },
+        onDone: () => {
+          setLoading(false);
+          abortRef.current = null;
+        },
+        onError: (err) => {
+          setError(err || 'AI 搜索失败，请稍后重试');
+          setLoading(false);
+          abortRef.current = null;
+        },
+      });
+      abortRef.current = controller;
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
-    } catch (err: any) {
-      setError(err?.message || '搜索失败，请稍后重试');
-    } finally {
-      setLoading(false);
+    } else {
+      // 题目搜索 -> 走 MySQL/ES 链路
+      try {
+        const res = await questionApi.list({ title: query.trim(), current: 1, pageSize: 20 });
+        setQuestions(res.data?.records || []);
+        setTimeout(() => {
+          resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+      } catch (err: any) {
+        setError(err?.message || '搜索失败，请稍后重试');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -133,6 +194,17 @@ export default function RagSearch() {
     if (diff.includes('简单') || diff.includes('EASY')) return 'badge-easy';
     if (diff.includes('中等') || diff.includes('MEDIUM')) return 'badge-medium';
     return 'badge-hard';
+  };
+
+  // 重新搜索（AI 模式）
+  const resetAiSearch = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreamingAnswer('');
+    setStreamingSources([]);
+    setCacheHit(false);
+    setQuery('');
+    inputRef.current?.focus();
   };
 
   return (
@@ -231,7 +303,7 @@ export default function RagSearch() {
       </div>
 
       {/* 快捷问题（仅 AI 模式） */}
-      {!result && !questions.length && !loading && mode === 'ai' && (
+      {!streamingAnswer && !questions.length && !loading && mode === 'ai' && (
         <div className="mt-5 flex flex-wrap items-center gap-2 justify-center">
           <span className="text-xs text-ink/40">试试：</span>
           {quickQuestions.map((q) => (
@@ -259,11 +331,11 @@ export default function RagSearch() {
 
       {/* 结果区 */}
       <div ref={resultRef}>
-        {/* AI 询问结果 */}
-        {mode === 'ai' && result && (
+        {/* AI 询问结果（流式渲染 + Markdown） */}
+        {mode === 'ai' && (streamingAnswer || loading) && (
           <div className="mt-8 animate-slide-up">
             {/* 缓存标记 */}
-            {result.cacheHit && (
+            {cacheHit && (
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-xs text-amber-600 mb-3">
                 <Zap className="w-3 h-3" />
                 语义缓存命中
@@ -277,24 +349,32 @@ export default function RagSearch() {
                   <Sparkles className="w-4 h-4 text-accent" />
                 </div>
                 <span className="font-display text-sm font-bold">AI 回答</span>
+                {loading && (
+                  <span className="inline-flex items-center gap-1 ml-2 text-xs text-accent/60">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    生成中...
+                  </span>
+                )}
               </div>
               <div className="px-6 py-5">
-                <div className="prose prose-sm max-w-none text-ink/80 leading-relaxed whitespace-pre-wrap">
-                  {result.answer}
+                <div className="prose prose-sm max-w-none text-ink/80 leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {filterThinkTags(streamingAnswer) || ''}
+                  </ReactMarkdown>
                 </div>
               </div>
             </div>
 
             {/* 引用溯源 */}
-            {result.sourceQuestions.length > 0 && (
+            {streamingSources.length > 0 && (
               <div className="mt-4">
                 <div className="flex items-center gap-2 mb-3">
                   <BookOpen className="w-4 h-4 text-ink/40" />
                   <span className="text-xs font-medium text-ink/40">参考题目</span>
-                  <span className="text-xs text-ink/30">({result.sourceQuestions.length})</span>
+                  <span className="text-xs text-ink/30">({streamingSources.length})</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {result.sourceQuestions.map((src) => (
+                  {streamingSources.map((src) => (
                     <Link
                       key={src.questionId}
                       href={`/problems/${src.questionId}`}
@@ -309,17 +389,15 @@ export default function RagSearch() {
             )}
 
             {/* 重新搜索 */}
-            <button
-              onClick={() => {
-                setResult(null);
-                setQuery('');
-                inputRef.current?.focus();
-              }}
-              className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink/40 hover:text-accent transition-colors"
-            >
-              <Search className="w-4 h-4" />
-              重新搜索
-            </button>
+            {!loading && (
+              <button
+                onClick={resetAiSearch}
+                className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink/40 hover:text-accent transition-colors"
+              >
+                <Search className="w-4 h-4" />
+                重新搜索
+              </button>
+            )}
           </div>
         )}
 

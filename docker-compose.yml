@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ===== 后端 =====
   backend:
@@ -19,6 +17,10 @@ services:
       - REDIS_PASSWORD=Redis@2026Secure
       - RABBITMQ_PASSWORD=Mq@2026Secure
       - AI_DASHSCOPE_API_KEY=${AI_DASHSCOPE_API_KEY}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - SPRING_AI_MCP_CLIENT_ENABLED=false
+      - SPRING_KAFKA_LISTENER_AUTO_STARTUP=false
+      - SPRING_KAFKA_ADMIN_AUTO_CREATE=false
     networks:
       - interview-net
       - infra-net
