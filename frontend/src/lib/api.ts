@@ -35,6 +35,13 @@ export const questionApi = {
     request.post<any, BaseResponse<Page<QuestionVO>>>('/api/question/list/page/vo', data),
   get: (id: number) =>
     request.get<any, BaseResponse<QuestionVO>>(`/api/question/get/vo/${id}`),
+  // 题目掌握标记（"我学会了"）
+  markMastery: (questionId: number) =>
+    request.post<any, BaseResponse<boolean>>(`/api/question/mastery/${questionId}`),
+  unmarkMastery: (questionId: number) =>
+    request.delete<any, BaseResponse<boolean>>(`/api/question/mastery/${questionId}`),
+  checkMastery: (questionId: number) =>
+    request.get<any, BaseResponse<boolean>>(`/api/question/mastery/${questionId}`),
 };
 
 // ========== 判题 ==========

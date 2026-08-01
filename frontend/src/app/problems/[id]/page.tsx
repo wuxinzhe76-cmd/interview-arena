@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { questionApi, judgeApi } from '@/lib/api';
 import type { QuestionVO, SubmissionVO } from '@/types';
-import { Play, Loader2, CheckCircle, XCircle, Clock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Play, Loader2, CheckCircle, XCircle, Clock, AlertCircle, Eye, EyeOff, Circle } from 'lucide-react';
 
 // Monaco 编辑器动态加载(避免 SSR)
 const MonacoEditor = dynamic(() => import('@monaco-editor/react').then((m) => m.default), {
@@ -45,13 +45,20 @@ export default function ProblemDetailPage() {
   const [submission, setSubmission] = useState<SubmissionVO | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAnswer, setShowAnswer] = useState(false); // 八股题:是否显示参考答案
+  const [mastered, setMastered] = useState(false);
+  const [masteryLoading, setMasteryLoading] = useState(false);
 
-  // 加载题目
+  // 加载题目 + 查询掌握状态
   useEffect(() => {
     (async () => {
       try {
         const res = await questionApi.get(questionId);
         setQuestion(res.data);
+        // 查询当前用户是否已标记掌握
+        try {
+          const masteryRes = await questionApi.checkMastery(questionId);
+          setMastered(masteryRes.data);
+        } catch { /* 未登录时不报错 */ }
       } catch (err) {
         console.error(err);
       } finally {
@@ -59,6 +66,24 @@ export default function ProblemDetailPage() {
       }
     })();
   }, [questionId]);
+
+  // 切换掌握标记
+  const toggleMastery = async () => {
+    setMasteryLoading(true);
+    try {
+      if (mastered) {
+        await questionApi.unmarkMastery(questionId);
+        setMastered(false);
+      } else {
+        await questionApi.markMastery(questionId);
+        setMastered(true);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMasteryLoading(false);
+    }
+  };
 
   // 提交代码(算法题)
   const handleSubmit = async () => {
@@ -99,6 +124,25 @@ export default function ProblemDetailPage() {
             {isProgramming ? '算法题' : '八股题'}
           </span>
           <h1 className="font-display text-2xl font-bold">{question.title}</h1>
+          {/* 我学会了 标记按钮 */}
+          <button
+            onClick={toggleMastery}
+            disabled={masteryLoading}
+            className={`ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50 ${
+              mastered
+                ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
+                : 'bg-surface-subtle text-ink/60 border border-surface-border hover:border-green-300 hover:text-green-600'
+            }`}
+          >
+            {masteryLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : mastered ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <Circle className="w-4 h-4" />
+            )}
+            {mastered ? '已学会' : '标记已学会'}
+          </button>
         </div>
         <div className="flex items-center gap-4 mt-2 text-sm text-ink/50">
           {isProgramming && <span>时间限制 {question.timeLimit || 1000}ms</span>}

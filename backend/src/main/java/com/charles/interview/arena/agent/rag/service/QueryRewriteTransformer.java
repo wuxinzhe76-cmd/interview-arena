@@ -51,13 +51,33 @@ public class QueryRewriteTransformer {
                     .call()
                     .content();
             if (rewritten != null && !rewritten.isBlank()) {
+                // 过滤 LLM 输出的 <think>...</think> 思考过程标签
+                rewritten = filterThinkTags(rewritten);
                 rewritten = rewritten.trim().replaceAll("^\"|\"$", "");
-                log.info("查询改写：'{}' → '{}'", query, rewritten);
+                if (rewritten.isBlank()) {
+                    log.warn("查询改写结果为空（think 标签过滤后），使用原始查询：'{}'", query);
+                    return query;
+                }
+                log.info("查询改写：'{}' -> '{}'", query, rewritten);
                 return rewritten;
             }
         } catch (Exception e) {
             log.warn("查询改写失败，使用原始查询：{}", e.getMessage());
         }
         return query;
+    }
+
+    /**
+     * 过滤 LLM 输出中的 <think>...</think> 思考过程标签
+     */
+    private String filterThinkTags(String text) {
+        // 移除已闭合的 <think>...</think>
+        String filtered = text.replaceAll("<think>[\\s\\S]*?</think>", "");
+        // 处理未闭合的 <think>
+        int openIdx = filtered.lastIndexOf("<think>");
+        if (openIdx != -1 && !filtered.substring(openIdx).contains("</think>")) {
+            filtered = filtered.substring(0, openIdx);
+        }
+        return filtered;
     }
 }

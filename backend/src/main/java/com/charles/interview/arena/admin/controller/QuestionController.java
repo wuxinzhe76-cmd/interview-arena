@@ -14,11 +14,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.charles.interview.arena.common.BaseResponse;
+import com.charles.interview.arena.common.ErrorCode;
 import com.charles.interview.arena.common.ResultUtils;
+import com.charles.interview.arena.exception.ThrowUtils;
+import com.charles.interview.arena.mapper.UserQuestionMasteryMapper;
 import com.charles.interview.arena.model.dto.QuestionAddDTO;
 import com.charles.interview.arena.model.dto.QuestionQueryDTO;
+import com.charles.interview.arena.model.entity.UserQuestionMastery;
 import com.charles.interview.arena.model.vo.QuestionVO;
 import com.charles.interview.arena.admin.service.QuestionBankQuestionService;
 import com.charles.interview.arena.admin.service.QuestionService;
@@ -32,6 +37,7 @@ public class QuestionController {
 
     private final QuestionService questionService;
     private final QuestionBankQuestionService questionBankQuestionService;
+    private final UserQuestionMasteryMapper userQuestionMasteryMapper;
 
     @PostMapping("/add")
     public BaseResponse<Long> add(@Valid @RequestBody QuestionAddDTO dto, HttpServletRequest request) {
@@ -93,5 +99,53 @@ public class QuestionController {
     public BaseResponse<List<QuestionVO>> listByBankId(@PathVariable Long bankId) {
         List<QuestionVO> list = questionBankQuestionService.listQuestionsByBankId(bankId);
         return ResultUtils.success(list);
+    }
+
+    // ========== 题目掌握标记（"我学会了"） ==========
+
+    /** 标记题目已掌握 */
+    @PostMapping("/mastery/{questionId}")
+    public BaseResponse<Boolean> markMastery(@PathVariable Long questionId, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        // 已存在则不重复插入
+        UserQuestionMastery existing = userQuestionMasteryMapper.selectOne(
+                new LambdaQueryWrapper<UserQuestionMastery>()
+                        .eq(UserQuestionMastery::getUserId, userId)
+                        .eq(UserQuestionMastery::getQuestionId, questionId));
+        if (existing == null) {
+            UserQuestionMastery record = new UserQuestionMastery();
+            record.setUserId(userId);
+            record.setQuestionId(questionId);
+            record.setStatus("MASTERED");
+            userQuestionMasteryMapper.insert(record);
+        } else if (!"MASTERED".equals(existing.getStatus())) {
+            existing.setStatus("MASTERED");
+            userQuestionMasteryMapper.updateById(existing);
+        }
+        return ResultUtils.success(true);
+    }
+
+    /** 取消掌握标记 */
+    @DeleteMapping("/mastery/{questionId}")
+    public BaseResponse<Boolean> unmarkMastery(@PathVariable Long questionId, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        userQuestionMasteryMapper.delete(new LambdaQueryWrapper<UserQuestionMastery>()
+                .eq(UserQuestionMastery::getUserId, userId)
+                .eq(UserQuestionMastery::getQuestionId, questionId));
+        return ResultUtils.success(true);
+    }
+
+    /** 查询题目是否已掌握 */
+    @GetMapping("/mastery/{questionId}")
+    public BaseResponse<Boolean> checkMastery(@PathVariable Long questionId, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        Long count = userQuestionMasteryMapper.selectCount(new LambdaQueryWrapper<UserQuestionMastery>()
+                .eq(UserQuestionMastery::getUserId, userId)
+                .eq(UserQuestionMastery::getQuestionId, questionId)
+                .eq(UserQuestionMastery::getStatus, "MASTERED"));
+        return ResultUtils.success(count > 0);
     }
 }
