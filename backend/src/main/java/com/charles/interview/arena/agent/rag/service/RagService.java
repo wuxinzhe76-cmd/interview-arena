@@ -10,7 +10,7 @@ import java.io.IOException;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vector.store.VectorStore;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.stereotype.Service;
