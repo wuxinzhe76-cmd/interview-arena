@@ -239,6 +239,10 @@ export default function InterviewPage() {
       {/* 对话区域 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 bg-cream">
         <div className="max-w-3xl mx-auto space-y-4">
+          {/* 调试信息（临时） */}
+          <div className="text-xs text-ink/40 bg-white border border-surface-border rounded-lg px-3 py-2">
+            phase={phase} · messages={messages.length} · sessionId={sessionId ?? 'null'} · error={error || 'none'}
+          </div>
           {messages.map((msg, i) => (
             <div
               key={i}

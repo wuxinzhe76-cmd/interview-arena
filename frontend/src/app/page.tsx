@@ -1,8 +1,14 @@
+'use client';
+
 import Link from 'next/link';
 import { ArrowRight, Brain, Code2, Trophy } from 'lucide-react';
 import RagSearch from '@/components/RagSearch';
+import { useUserStore } from '@/store/user';
 
 export default function HomePage() {
+  const { accessToken } = useUserStore();
+  const isLoggedIn = !!accessToken;
+
   return (
     <div className="animate-fade-in">
       {/* Hero 区 */}
@@ -11,23 +17,25 @@ export default function HomePage() {
         <div className="absolute top-10 right-10 w-64 h-64 rounded-full bg-accent-light opacity-40 blur-3xl" />
         <div className="absolute bottom-10 left-10 w-48 h-48 rounded-full bg-amber-100 opacity-50 blur-2xl" />
 
-        <div className="relative max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-subtle border border-surface-border mb-6">
-            <Brain className="w-4 h-4 text-accent" />
-            <span className="text-sm text-ink/70">AI 原生面试平台</span>
+        <div className="relative max-w-3xl mx-auto">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-subtle border border-surface-border mb-6">
+              <Brain className="w-4 h-4 text-accent" />
+              <span className="text-sm text-ink/70">AI 原生面试平台</span>
+            </div>
+
+            <h1 className="font-display text-5xl sm:text-6xl font-bold tracking-tight mb-6">
+              刷题 · 判题 · <span className="text-accent">AI 面试</span>
+            </h1>
+
+            <p className="text-lg text-ink/60 mb-10 leading-relaxed">
+              431 道大厂算法题，在线编写代码，Docker 沙箱判题。
+              <br />
+              AI 模拟面试，深度追问，像真实面试官一样考察你。
+            </p>
           </div>
 
-          <h1 className="font-display text-5xl sm:text-6xl font-bold tracking-tight mb-6">
-            刷题 · 判题 · <span className="text-accent">AI 面试</span>
-          </h1>
-
-          <p className="text-lg text-ink/60 mb-10 leading-relaxed">
-            431 道大厂算法题,在线编写代码,Docker 沙箱判题。
-            <br />
-            AI 模拟面试,深度追问,像真实面试官一样考察你。
-          </p>
-
-          {/* RAG AI 搜索 */}
+          {/* RAG AI 搜索（内容左对齐，像豆包一样展示 Markdown） */}
           <RagSearch />
 
           {/* 行动按钮 */}
@@ -38,12 +46,14 @@ export default function HomePage() {
             >
               开始刷题 <ArrowRight className="w-4 h-4" />
             </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-surface-border bg-white font-medium hover:bg-surface-subtle transition-colors"
-            >
-              登录
-            </Link>
+            {!isLoggedIn && (
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-surface-border bg-white font-medium hover:bg-surface-subtle transition-colors"
+              >
+                登录
+              </Link>
+            )}
           </div>
         </div>
       </section>

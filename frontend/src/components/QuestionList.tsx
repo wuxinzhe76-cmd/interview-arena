@@ -264,8 +264,15 @@ export function QuestionList({ title, subtitle, fixedType }: QuestionListProps) 
                       </div>
                     )}
                   </div>
-                  <div className="hidden sm:flex items-center gap-2 text-sm text-ink/40">
-                    <span>{q.acceptanceRate?.toFixed(1) || '0.0'}%</span>
+                  <div className="hidden sm:flex items-center gap-3 text-sm">
+                    <span className="text-ink/40" title="复习次数">
+                      复习 {q.reviewCount || 0} 次
+                    </span>
+                    {q.mastered && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border border-green-200 bg-green-50 text-green-700">
+                        已学会
+                      </span>
+                    )}
                   </div>
                   <span className={`px-2.5 py-0.5 rounded-md text-xs font-medium border ${diff.cls}`}>
                     {diff.text}

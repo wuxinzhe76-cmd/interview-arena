@@ -59,14 +59,16 @@ public class QuestionController {
     }
 
     @GetMapping("/get/vo/{id}")
-    public BaseResponse<QuestionVO> getVO(@PathVariable Long id) {
-        QuestionVO vo = questionService.getQuestionVO(id);
+    public BaseResponse<QuestionVO> getVO(@PathVariable Long id, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        QuestionVO vo = questionService.getQuestionVO(id, userId);
         return ResultUtils.success(vo);
     }
 
     @PostMapping("/list/page/vo")
-    public BaseResponse<Page<QuestionVO>> listPageVO(@RequestBody QuestionQueryDTO dto) {
-        Page<QuestionVO> page = questionService.listQuestionVOByPage(dto);
+    public BaseResponse<Page<QuestionVO>> listPageVO(@RequestBody QuestionQueryDTO dto, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        Page<QuestionVO> page = questionService.listQuestionVOByPage(dto, userId);
         return ResultUtils.success(page);
     }
 
@@ -108,7 +110,6 @@ public class QuestionController {
     public BaseResponse<Boolean> markMastery(@PathVariable Long questionId, HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
         ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
-        // 已存在则不重复插入
         UserQuestionMastery existing = userQuestionMasteryMapper.selectOne(
                 new LambdaQueryWrapper<UserQuestionMastery>()
                         .eq(UserQuestionMastery::getUserId, userId)
@@ -118,9 +119,13 @@ public class QuestionController {
             record.setUserId(userId);
             record.setQuestionId(questionId);
             record.setStatus("MASTERED");
+            record.setReviewCount(1);
             userQuestionMasteryMapper.insert(record);
-        } else if (!"MASTERED".equals(existing.getStatus())) {
+        } else {
             existing.setStatus("MASTERED");
+            if (existing.getReviewCount() == null) {
+                existing.setReviewCount(1);
+            }
             userQuestionMasteryMapper.updateById(existing);
         }
         return ResultUtils.success(true);
@@ -147,5 +152,33 @@ public class QuestionController {
                 .eq(UserQuestionMastery::getQuestionId, questionId)
                 .eq(UserQuestionMastery::getStatus, "MASTERED"));
         return ResultUtils.success(count > 0);
+    }
+
+    /** 增加复习次数（查看答案/练习一次调用一次） */
+    @PostMapping("/review/{questionId}")
+    public BaseResponse<Integer> addReviewCount(@PathVariable Long questionId, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
+
+        UserQuestionMastery existing = userQuestionMasteryMapper.selectOne(
+                new LambdaQueryWrapper<UserQuestionMastery>()
+                        .eq(UserQuestionMastery::getUserId, userId)
+                        .eq(UserQuestionMastery::getQuestionId, questionId));
+
+        int newCount;
+        if (existing == null) {
+            UserQuestionMastery record = new UserQuestionMastery();
+            record.setUserId(userId);
+            record.setQuestionId(questionId);
+            record.setStatus("REVIEWING");
+            record.setReviewCount(1);
+            userQuestionMasteryMapper.insert(record);
+            newCount = 1;
+        } else {
+            newCount = (existing.getReviewCount() != null ? existing.getReviewCount() : 0) + 1;
+            existing.setReviewCount(newCount);
+            userQuestionMasteryMapper.updateById(existing);
+        }
+        return ResultUtils.success(newCount);
     }
 }

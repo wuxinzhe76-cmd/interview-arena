@@ -27,6 +27,9 @@ public class UserQuestionMastery {
     /** MASTERED-已掌握, REVIEWING-复习中 */
     private String status;
 
+    /** 复习次数（查看答案/练习一次累加一次） */
+    private Integer reviewCount;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

@@ -1,26 +1,31 @@
 package com.charles.interview.arena.admin.service.impl;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.charles.interview.arena.admin.service.QuestionService;
+import com.charles.interview.arena.agent.rag.event.QuestionChangedEvent;
+import com.charles.interview.arena.agent.rag.event.QuestionChangedEvent.Action;
 import com.charles.interview.arena.common.ErrorCode;
 import com.charles.interview.arena.exception.ThrowUtils;
 import com.charles.interview.arena.mapper.QuestionMapper;
+import com.charles.interview.arena.mapper.UserQuestionMasteryMapper;
 import com.charles.interview.arena.model.dto.QuestionAddDTO;
 import com.charles.interview.arena.model.dto.QuestionQueryDTO;
 import com.charles.interview.arena.model.entity.Question;
+import com.charles.interview.arena.model.entity.UserQuestionMastery;
 import com.charles.interview.arena.model.vo.QuestionVO;
-import com.charles.interview.arena.agent.rag.event.QuestionChangedEvent;
-import com.charles.interview.arena.agent.rag.event.QuestionChangedEvent.Action;
-import com.charles.interview.arena.admin.service.QuestionService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> implements QuestionService {
 
     private final ApplicationEventPublisher eventPublisher;
+    private final UserQuestionMasteryMapper userQuestionMasteryMapper;
 
     @Override
     public Long addQuestion(QuestionAddDTO dto, Long userId) {
@@ -83,47 +89,73 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     }
 
     @Override
-    public QuestionVO getQuestionVO(Long id) {
+    public QuestionVO getQuestionVO(Long id, Long userId) {
         Question question = this.getById(id);
         ThrowUtils.throwIf(question == null, ErrorCode.NOT_FOUND_ERROR, "题目不存在");
         QuestionVO vo = new QuestionVO();
         BeanUtils.copyProperties(question, vo);
+        fillMasteryInfo(List.of(vo), userId);
         return vo;
     }
 
     @Override
-    public Page<QuestionVO> listQuestionVOByPage(QuestionQueryDTO dto) {
-        // TODO: 你来写 —— 练习 MyBatis-Plus 分页 + 标签筛选
-        // 提示:
-        // 1. QueryWrapper 构建条件:
-        //    - title: wrapper.like("title", title)  (注意判空)
-        //    - type:  wrapper.eq("type", type)
-        //    - difficulty: wrapper.eq("difficulty", difficulty)
+    public Page<QuestionVO> listQuestionVOByPage(QuestionQueryDTO dto, Long userId) {
         QueryWrapper<Question> queryWrapper = new QueryWrapper<>();
         queryWrapper.like(StringUtils.isNotBlank(dto.getTitle()),"title", dto.getTitle())
                     .eq(StringUtils.isNotBlank(dto.getType()), "type", dto.getType())
                     .eq(StringUtils.isNotBlank(dto.getDifficulty()), "difficulty", dto.getDifficulty());
-        // 2. tags 标签筛选(关键!用 apply 拼原生 SQL):
-        //    for (String tag : dto.getTags()) {
-        //        wrapper.apply("JSON_CONTAINS(tags, {0})", "\"" + tag + "\"");
-        //    }
         if (dto.getTags() != null && !dto.getTags().isEmpty()) {
             for (String tag : dto.getTags()) {
-            queryWrapper.apply("JSON_CONTAINS(tags, {0})", "\"" + tag + "\"");
+                queryWrapper.apply("JSON_CONTAINS(tags, {0})", "\"" + tag + "\"");
+            }
         }
-    }
-        //    注意: JSON_CONTAINS 第二个参数要是 JSON 字符串(带双引号),如 "HashMap"
-        // 3. 分页: this.page(new Page<>(current, pageSize), wrapper)
         Page<Question> page = this.page(new Page<>(dto.getCurrent(), dto.getPageSize()),queryWrapper);
 
-        // 4. 转 VO: page.convert(q -> { QuestionVO vo = new QuestionVO(); BeanUtils.copyProperties(q, vo); return vo; })
         Page<QuestionVO> voPage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
         List<QuestionVO> voList = page.getRecords().stream().map(q -> {
             QuestionVO vo = new QuestionVO();
             BeanUtils.copyProperties(q, vo);
             return vo;
         }).collect(Collectors.toList());
+        fillMasteryInfo(voList, userId);
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    /**
+     * 批量填充当前用户对题目的掌握信息（复习次数 + 是否已掌握）
+     */
+    private void fillMasteryInfo(List<QuestionVO> voList, Long userId) {
+        if (voList == null || voList.isEmpty() || userId == null) {
+            // 未登录时默认 reviewCount=0, mastered=false
+            for (QuestionVO vo : voList) {
+                vo.setReviewCount(0);
+                vo.setMastered(Boolean.FALSE);
+            }
+            return;
+        }
+
+        Set<Long> questionIds = voList.stream()
+                .map(QuestionVO::getId)
+                .collect(Collectors.toSet());
+
+        List<UserQuestionMastery> masteryList = userQuestionMasteryMapper.selectList(
+                new LambdaQueryWrapper<UserQuestionMastery>()
+                        .eq(UserQuestionMastery::getUserId, userId)
+                        .in(UserQuestionMastery::getQuestionId, questionIds));
+
+        Map<Long, UserQuestionMastery> masteryMap = masteryList.stream()
+                .collect(Collectors.toMap(UserQuestionMastery::getQuestionId, m -> m, (a, b) -> a));
+
+        for (QuestionVO vo : voList) {
+            UserQuestionMastery mastery = masteryMap.get(vo.getId());
+            if (mastery != null) {
+                vo.setReviewCount(mastery.getReviewCount() != null ? mastery.getReviewCount() : 0);
+                vo.setMastered("MASTERED".equals(mastery.getStatus()));
+            } else {
+                vo.setReviewCount(0);
+                vo.setMastered(Boolean.FALSE);
+            }
+        }
     }
 }

@@ -26,11 +26,17 @@ public interface QuestionService extends IService<Question> {
 
     /**
      * 获取题目VO(脱敏)
+     *
+     * @param id     题目ID
+     * @param userId 当前用户ID(可为空)
      */
-    QuestionVO getQuestionVO(Long id);
+    QuestionVO getQuestionVO(Long id, Long userId);
 
     /**
      * 分页查询题目列表(支持标题模糊 + 标签筛选 + 类型/难度过滤)
+     *
+     * @param dto    查询条件
+     * @param userId 当前用户ID(可为空)
      */
-    Page<QuestionVO> listQuestionVOByPage(QuestionQueryDTO dto);
+    Page<QuestionVO> listQuestionVOByPage(QuestionQueryDTO dto, Long userId);
 }

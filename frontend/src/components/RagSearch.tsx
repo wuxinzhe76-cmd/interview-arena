@@ -45,6 +45,20 @@ export default function RagSearch() {
   const inputRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
+  // 流式输出速度控制：字符队列，按固定间隔逐个渲染，避免一次性刷出
+  const charQueueRef = useRef<string[]>([]);
+  const charTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (charTimerRef.current) {
+        clearInterval(charTimerRef.current);
+        charTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // 组件卸载时取消进行中的流式请求
   useEffect(() => {
     return () => {
@@ -98,14 +112,40 @@ export default function RagSearch() {
     inputRef.current?.focus();
   };
 
-  // 提交搜索
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() || loading) return;
+  // 将待显示字符加入队列，按固定间隔渲染，降低视觉上的“刷屏”感
+  const enqueueTokenChars = useCallback((token: string) => {
+    charQueueRef.current.push(...token.split(''));
+    if (!charTimerRef.current) {
+      charTimerRef.current = setInterval(() => {
+        if (charQueueRef.current.length === 0) return;
+        // 每批渲染 2 个字符，约 25ms/批 -> 速度适中
+        const chars = charQueueRef.current.splice(0, 2).join('');
+        setStreamingAnswer((prev) => prev + chars);
+      }, 25);
+    }
+  }, []);
+
+  // 清空字符队列并一次性输出剩余内容
+  const flushCharQueue = useCallback(() => {
+    if (charTimerRef.current) {
+      clearInterval(charTimerRef.current);
+      charTimerRef.current = null;
+    }
+    if (charQueueRef.current.length > 0) {
+      const remaining = charQueueRef.current.join('');
+      charQueueRef.current = [];
+      setStreamingAnswer((prev) => prev + remaining);
+    }
+  }, []);
+
+  // 执行搜索（AI 流式 / 题目列表）
+  const doSearch = useCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim() || loading) return;
 
     // 取消上一个流式请求
     abortRef.current?.abort();
     abortRef.current = null;
+    flushCharQueue();
 
     setShowSuggest(false);
     setLoading(true);
@@ -117,19 +157,21 @@ export default function RagSearch() {
 
     if (mode === 'ai') {
       // AI 询问 -> 走流式 RAG 链路（SSE）
-      const controller = ragApi.chatStream(query.trim(), {
+      const controller = ragApi.chatStream(searchQuery.trim(), {
         onMeta: (meta) => {
           setCacheHit(meta.cacheHit);
           setStreamingSources(meta.sourceQuestions || []);
         },
         onToken: (token) => {
-          setStreamingAnswer((prev) => prev + token);
+          enqueueTokenChars(token);
         },
         onDone: () => {
+          flushCharQueue();
           setLoading(false);
           abortRef.current = null;
         },
         onError: (err) => {
+          flushCharQueue();
           setError(err || 'AI 搜索失败，请稍后重试');
           setLoading(false);
           abortRef.current = null;
@@ -142,7 +184,7 @@ export default function RagSearch() {
     } else {
       // 题目搜索 -> 走 MySQL/ES 链路
       try {
-        const res = await questionApi.list({ title: query.trim(), current: 1, pageSize: 20 });
+        const res = await questionApi.list({ title: searchQuery.trim(), current: 1, pageSize: 20 });
         setQuestions(res.data?.records || []);
         setTimeout(() => {
           resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -153,13 +195,20 @@ export default function RagSearch() {
         setLoading(false);
       }
     }
+  }, [loading, mode, enqueueTokenChars, flushCharQueue]);
+
+  // 提交搜索
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    doSearch(query);
   };
 
-  // 点击建议项
+  // 点击建议项：补全并立即搜索
   const handleSuggestClick = (text: string) => {
     setQuery(text);
     setShowSuggest(false);
     inputRef.current?.focus();
+    doSearch(text);
   };
 
   // 键盘导航
@@ -208,7 +257,7 @@ export default function RagSearch() {
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto">
+    <div className="w-full text-left">
       {/* 模式切换 Tab */}
       <div className="flex items-center justify-center gap-1 mb-4">
         <div className="inline-flex p-1 rounded-xl bg-surface-subtle border border-surface-border">

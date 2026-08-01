@@ -33,6 +33,8 @@ export interface QuestionVO {
   acceptedCount?: number;
   submissionCount?: number;
   acceptanceRate?: number;
+  reviewCount?: number;
+  mastered?: boolean;
   userId?: number;
   createTime?: string;
   updateTime?: string;
@@ -60,6 +62,22 @@ export interface QuestionQueryDTO {
   tags?: string[];
   type?: string;
   difficulty?: string;
+  current: number;
+  pageSize: number;
+}
+
+export interface QuestionBankVO {
+  id: number;
+  title: string;
+  description?: string;
+  picture?: string;
+  userId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface QuestionBankQueryDTO {
+  title?: string;
   current: number;
   pageSize: number;
 }

@@ -6,6 +6,8 @@ import type {
   QuestionVO,
   Page,
   QuestionQueryDTO,
+  QuestionBankVO,
+  QuestionBankQueryDTO,
   SubmissionVO,
   QuestionSubmitDTO,
   RagChatResponse,
@@ -42,6 +44,17 @@ export const questionApi = {
     request.delete<any, BaseResponse<boolean>>(`/api/question/mastery/${questionId}`),
   checkMastery: (questionId: number) =>
     request.get<any, BaseResponse<boolean>>(`/api/question/mastery/${questionId}`),
+  // 复习次数（查看答案/练习一次调用一次）
+  addReviewCount: (questionId: number) =>
+    request.post<any, BaseResponse<number>>(`/api/question/review/${questionId}`),
+};
+
+// ========== 题库 ==========
+export const questionBankApi = {
+  list: (data: QuestionBankQueryDTO) =>
+    request.post<any, BaseResponse<Page<QuestionBankVO>>>('/api/questionBank/list/page/vo', data),
+  get: (id: number) =>
+    request.get<any, BaseResponse<QuestionBankVO>>(`/api/questionBank/get/vo/${id}`),
 };
 
 // ========== 判题 ==========

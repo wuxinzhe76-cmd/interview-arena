@@ -46,19 +46,17 @@ export default function ProblemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showAnswer, setShowAnswer] = useState(false); // 八股题:是否显示参考答案
   const [mastered, setMastered] = useState(false);
+  const [reviewCount, setReviewCount] = useState(0);
   const [masteryLoading, setMasteryLoading] = useState(false);
 
-  // 加载题目 + 查询掌握状态
+  // 加载题目 + 查询掌握状态/复习次数
   useEffect(() => {
     (async () => {
       try {
         const res = await questionApi.get(questionId);
         setQuestion(res.data);
-        // 查询当前用户是否已标记掌握
-        try {
-          const masteryRes = await questionApi.checkMastery(questionId);
-          setMastered(masteryRes.data);
-        } catch { /* 未登录时不报错 */ }
+        setReviewCount(res.data.reviewCount || 0);
+        setMastered(res.data.mastered || false);
       } catch (err) {
         console.error(err);
       } finally {
@@ -77,12 +75,30 @@ export default function ProblemDetailPage() {
       } else {
         await questionApi.markMastery(questionId);
         setMastered(true);
+        // 首次标记时后端会初始化 reviewCount=1，本地同步兜底
+        if (reviewCount <= 0) {
+          setReviewCount(1);
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setMasteryLoading(false);
     }
+  };
+
+  // 查看参考答案：每次点击计为一次复习
+  const handleToggleAnswer = async () => {
+    const willShow = !showAnswer;
+    if (willShow) {
+      try {
+        const res = await questionApi.addReviewCount(questionId);
+        setReviewCount(res.data || reviewCount + 1);
+      } catch {
+        // 未登录时不阻断查看答案
+      }
+    }
+    setShowAnswer(willShow);
   };
 
   // 提交代码(算法题)
@@ -124,11 +140,14 @@ export default function ProblemDetailPage() {
             {isProgramming ? '算法题' : '八股题'}
           </span>
           <h1 className="font-display text-2xl font-bold">{question.title}</h1>
+          <span className="ml-auto text-sm text-ink/40" title="每查看一次答案累计一次">
+            已复习 {reviewCount} 次
+          </span>
           {/* 我学会了 标记按钮 */}
           <button
             onClick={toggleMastery}
             disabled={masteryLoading}
-            className={`ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50 ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50 ${
               mastered
                 ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
                 : 'bg-surface-subtle text-ink/60 border border-surface-border hover:border-green-300 hover:text-green-600'

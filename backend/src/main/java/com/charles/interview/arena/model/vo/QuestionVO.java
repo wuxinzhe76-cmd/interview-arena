@@ -22,6 +22,13 @@ public class QuestionVO {
     private Integer acceptedCount;
     private Integer submissionCount;
     private BigDecimal acceptanceRate;
+
+    /** 当前用户复习次数 */
+    private Integer reviewCount;
+
+    /** 当前用户是否已标记掌握 */
+    private Boolean mastered;
+
     private Long userId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
