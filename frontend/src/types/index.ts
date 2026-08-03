@@ -123,12 +123,12 @@ export interface InterviewStartDTO {
 }
 
 export interface InterviewAnswerDTO {
-  sessionId: number;
+  sessionId: string;
   answer: string;
 }
 
 export interface InterviewStartVO {
-  sessionId: number;
+  sessionId: string;
   openingQuestion: string;
 }
 

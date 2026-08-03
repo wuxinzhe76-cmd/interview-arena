@@ -190,6 +190,6 @@ export const interviewApi = {
     request.post<any, BaseResponse<InterviewStartVO>>('/api/interview/start', data),
   answer: (data: InterviewAnswerDTO) =>
     request.post<any, BaseResponse<InterviewAnswerVO>>('/api/interview/answer', data),
-  end: (sessionId: number) =>
+  end: (sessionId: string) =>
     request.post<any, BaseResponse<boolean>>(`/api/interview/end/${sessionId}`),
 };

@@ -22,7 +22,7 @@ export default function InterviewPage() {
   const [phase, setPhase] = useState<'config' | 'interview' | 'ended'>('config');
   const [mode, setMode] = useState<number>(2);
   const [bankId, setBankId] = useState<number | undefined>(undefined);
-  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);

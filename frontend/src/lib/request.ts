@@ -1,9 +1,24 @@
 import axios, { type AxiosResponse } from 'axios';
+import JSONBig from 'json-bigint';
 import type { BaseResponse } from '@/types';
+
+const JSONBigNative = JSONBig({ storeAsString: true });
 
 const request = axios.create({
   baseURL: '', // 走 Next.js rewrite 代理到 localhost:8080
   timeout: 30000, // RAG chat 需要检索+大模型生成，可能需要 10-20 秒
+  transformResponse: [
+    (data) => {
+      if (typeof data === 'string') {
+        try {
+          return JSONBigNative.parse(data);
+        } catch {
+          return data;
+        }
+      }
+      return data;
+    },
+  ],
 });
 
 // 请求拦截:自动加 token
