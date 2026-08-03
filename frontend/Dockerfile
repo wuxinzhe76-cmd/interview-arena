@@ -2,6 +2,9 @@
 
 # 第一阶段:安装依赖
 FROM node:20-alpine AS deps
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
